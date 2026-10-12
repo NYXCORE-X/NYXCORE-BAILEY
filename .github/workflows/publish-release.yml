@@ -48,7 +48,9 @@ jobs:
         run: yarn install --immutable
 
       - name: Publish NYXCORE package
-        run: npm publish --access public --provenance --tag latest
+        run: npm publish --access public --tag latest
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Generate Changelog
         id: generate_changelog
