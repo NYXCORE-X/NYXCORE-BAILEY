@@ -38,9 +38,12 @@ import {
 	getAudioDuration,
 	getAudioWaveform,
 	getRawMediaUploadData,
+	getStream,
+	toBuffer,
 	type MediaDownloadOptions
 } from './messages-media'
 import { shouldIncludeReportingToken } from './reporting-utils'
+import { createZip, readZip } from './zip'
 
 type ExtractByKey<T, K extends PropertyKey> = T extends Record<K, any> ? T : never
 type RequireKey<T, K extends keyof T> = T & {
@@ -392,6 +395,191 @@ function hasOptionalProperty<T, K extends PropertyKey>(obj: T, key: K): obj is W
 	return typeof obj === 'object' && obj !== null && key in obj && (obj as any)[key] !== null
 }
 
+
+// ───────────────────────── sticker packs ─────────────────────────
+// Ported from the approach in itsliaaa/baileys (MIT; fields validated against
+// WhiskeySockets/Baileys#1561). A pack is a zip of .webp files (+ tray icon),
+// encrypted and uploaded as media type "sticker-pack", plus a 252px jpeg
+// thumbnail encrypted with the SAME media key ("thumbnail-sticker-pack").
+
+const isWebPBuffer = (b: Buffer) => b.length > 12 && b.toString('ascii', 0, 4) === 'RIFF' && b.toString('ascii', 8, 12) === 'WEBP'
+const isAnimatedWebP = (b: Buffer) => {
+	if (!isWebPBuffer(b)) return false
+	// VP8X header: flags byte at offset 20, bit 0x02 = animation
+	if (b.toString('ascii', 12, 16) === 'VP8X' && b.length > 21) return (b[20]! & 0x02) !== 0
+	return false
+}
+
+const toWebp = async (buf: Buffer): Promise<Buffer> => {
+	if (isWebPBuffer(buf)) return buf
+	//@ts-ignore optional dependency
+	const sharp = (await import('sharp').catch(() => undefined))?.default
+	if (!sharp) {
+		throw new Boom('Sticker pack images must be .webp (install "sharp" to auto-convert other formats)', { statusCode: 400 })
+	}
+
+	return sharp(buf).resize(512, 512, { fit: 'inside' }).webp({ quality: 80 }).toBuffer()
+}
+
+const makePackThumbnail = async (buf: Buffer): Promise<Buffer | undefined> => {
+	try {
+		//@ts-ignore optional dependency
+		const sharp = (await import('sharp').catch(() => undefined))?.default
+		if (sharp) return await sharp(buf).resize(252, 252, { fit: 'cover' }).jpeg().toBuffer()
+		//@ts-ignore optional dependency
+		const jimp = await import('jimp').catch(() => undefined)
+		if (jimp?.Jimp) {
+			const img = await (jimp.Jimp as any).read(buf)
+			return await img.resize({ w: 252, h: 252 }).getBuffer('image/jpeg')
+		}
+	} catch {}
+
+	return undefined
+}
+
+type StickerPackInput = {
+	stickers: { data?: WAMediaUpload; image?: WAMediaUpload; emojis?: string[]; accessibilityLabel?: string; isLottie?: boolean }[]
+	cover?: WAMediaUpload
+	name?: string
+	publisher?: string
+	description?: string
+}
+
+const prepareStickerPackMessage = async (input: StickerPackInput, options: MessageContentGenerationOptions) => {
+	const { stickers = [], name = 'Sticker Pack', publisher = 'NYXCORE', description = '' } = input
+	const logger = options.logger
+	if (stickers.length === 0) throw new Boom('Sticker pack must contain at least one sticker', { statusCode: 400 })
+	if (stickers.length > 60) throw new Boom('Sticker pack exceeds the maximum of 60 stickers', { statusCode: 400 })
+
+	const packId = generateMessageIDV2()
+	const files: { name: string; data: Buffer }[] = []
+	const meta: proto.Message.StickerPackMessage.ISticker[] = []
+	const seen = new Set<string>()
+	let firstBuffer: Buffer | undefined
+
+	for (let i = 0; i < stickers.length; i++) {
+		const st = stickers[i]!
+		const src = st.data ?? st.image
+		if (!src) throw new Boom(`Sticker ${i} has no data`, { statusCode: 400 })
+		const { stream } = await getStream(src, options.options)
+		const raw = await toBuffer(stream)
+		const webp = await toWebp(raw)
+		if (webp.length > 1024 * 1024) throw new Boom(`Sticker ${i} exceeds the 1MB limit`, { statusCode: 400 })
+		firstBuffer ??= webp
+		const fileName = `${sha256(webp).toString('base64').replace(/\//g, '-')}.webp`
+		if (!seen.has(fileName)) {
+			seen.add(fileName)
+			files.push({ name: fileName, data: webp })
+		}
+
+		meta.push({
+			fileName,
+			mimetype: 'image/webp',
+			isAnimated: isAnimatedWebP(webp),
+			isLottie: !!st.isLottie,
+			emojis: st.emojis?.length ? st.emojis : ['✨'],
+			accessibilityLabel: st.accessibilityLabel || '\u200e'
+		})
+	}
+
+	let coverBuffer = firstBuffer!
+	if (input.cover) {
+		const { stream } = await getStream(input.cover, options.options)
+		coverBuffer = await toBuffer(stream)
+	}
+
+	const trayIconFileName = `${packId}.webp`
+	files.push({ name: trayIconFileName, data: await toWebp(coverBuffer) })
+
+	const zip = createZip(files)
+	const packUpload = await encryptedStream(zip, 'sticker-pack', { logger, opts: options.options })
+	let packResult: { mediaUrl?: string; directPath?: string }
+	try {
+		packResult = await options.upload(packUpload.encFilePath, {
+			fileEncSha256B64: packUpload.fileEncSha256.toString('base64'),
+			mediaType: 'sticker-pack',
+			timeoutMs: options.mediaUploadTimeoutMs
+		})
+	} finally {
+		fs.unlink(packUpload.encFilePath).catch(() => logger?.warn('failed to remove tmp file'))
+	}
+
+	const obj: proto.Message.IStickerPackMessage = {
+		name,
+		publisher,
+		stickerPackId: packId,
+		packDescription: description,
+		stickerPackOrigin: proto.Message.StickerPackMessage.StickerPackOrigin.USER_CREATED,
+		stickerPackSize: zip.length,
+		stickers: meta,
+		fileSha256: packUpload.fileSha256,
+		fileEncSha256: packUpload.fileEncSha256,
+		mediaKey: packUpload.mediaKey,
+		directPath: packResult.directPath,
+		fileLength: packUpload.fileLength,
+		mediaKeyTimestamp: unixTimestampSeconds(),
+		trayIconFileName
+	}
+
+	// Cover thumbnail (best effort — the pack still works without it)
+	try {
+		const thumb = await makePackThumbnail(coverBuffer)
+		if (thumb?.length) {
+			const t = await encryptedStream(thumb, 'thumbnail-sticker-pack', { logger, opts: options.options, mediaKey: packUpload.mediaKey })
+			let tr: { mediaUrl?: string; directPath?: string }
+			try {
+				tr = await options.upload(t.encFilePath, {
+					fileEncSha256B64: t.fileEncSha256.toString('base64'),
+					mediaType: 'thumbnail-sticker-pack',
+					timeoutMs: options.mediaUploadTimeoutMs
+				})
+			} finally {
+				fs.unlink(t.encFilePath).catch(() => logger?.warn('failed to remove tmp file'))
+			}
+
+			Object.assign(obj, {
+				thumbnailDirectPath: tr.directPath,
+				thumbnailSha256: t.fileSha256,
+				thumbnailEncSha256: t.fileEncSha256,
+				thumbnailHeight: 252,
+				thumbnailWidth: 252,
+				imageDataHash: sha256(thumb).toString('base64')
+			})
+		}
+	} catch (e) {
+		logger?.warn({ err: e }, 'sticker pack thumbnail failed')
+	}
+
+	return proto.Message.StickerPackMessage.fromObject(obj)
+}
+
+/**
+ * Downloads a received sticker pack and returns its stickers as .webp buffers
+ * (the tray icon is returned separately). Accepts a message or its stickerPackMessage.
+ */
+export const extractStickerPack = async (
+	input: proto.IWebMessageInfo | proto.Message.IStickerPackMessage,
+	options: MediaDownloadOptions = {}
+) => {
+	const pack: proto.Message.IStickerPackMessage | null | undefined =
+		'key' in input ? extractMessageContent((input as proto.IWebMessageInfo).message)?.stickerPackMessage : (input as any)
+	if (!pack?.mediaKey || !pack.directPath) throw new Boom('Not a sticker pack message', { statusCode: 400 })
+	const stream = await downloadContentFromMessage(pack as DownloadableMessage, 'sticker-pack', options)
+	const chunks: Buffer[] = []
+	for await (const c of stream) chunks.push(c)
+	const files = readZip(Buffer.concat(chunks))
+	const byName = new Map(files.map(f => [f.name, f.data]))
+	return {
+		name: pack.name || '',
+		publisher: pack.publisher || '',
+		description: pack.packDescription || '',
+		stickers: (pack.stickers || [])
+			.map(s => ({ ...s, data: byName.get(s.fileName || '') }))
+			.filter(s => !!s.data) as (proto.Message.StickerPackMessage.ISticker & { data: Buffer })[],
+		tray: pack.trayIconFileName ? byName.get(pack.trayIconFileName) : undefined
+	}
+}
+
 export const generateWAMessageContent = async (
 	message: AnyMessageContent,
 	options: MessageContentGenerationOptions
@@ -591,6 +779,11 @@ export const generateWAMessageContent = async (
 			expectedImageCount: message.album.expectedImageCount,
 			expectedVideoCount: message.album.expectedVideoCount
 		}
+	} else if (hasNonNullishProperty(message, 'stickerPack') || hasNonNullishProperty(message, 'stickers')) {
+		m.stickerPackMessage = await prepareStickerPackMessage(
+			((message as any).stickerPack ?? message) as StickerPackInput,
+			options
+		)
 	} else if (hasNonNullishProperty(message, 'sharePhoneNumber')) {
 		m.protocolMessage = {
 			type: proto.Message.ProtocolMessage.Type.SHARE_PHONE_NUMBER
@@ -1075,10 +1268,10 @@ export const downloadMediaMessage = async <Type extends 'buffer' | 'stream'>(
 		}
 
 		const contentType = getContentType(mContent)
-		let mediaType = contentType?.replace('Message', '') as MediaType
+		let mediaType = (contentType === 'stickerPackMessage' ? 'sticker-pack' : contentType?.replace('Message', '')) as MediaType
 		const media = mContent[contentType!]
 
-		if (!media || typeof media !== 'object' || (!('url' in media) && !('thumbnailDirectPath' in media))) {
+		if (!media || typeof media !== 'object' || (!('url' in media) && !('thumbnailDirectPath' in media) && !('directPath' in media))) {
 			throw new Boom(`"${contentType}" message is not a media message`)
 		}
 

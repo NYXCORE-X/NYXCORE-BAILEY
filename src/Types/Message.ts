@@ -229,6 +229,14 @@ export type WASendableProduct = Omit<proto.Message.ProductMessage.IProductSnapsh
 	productImage: WAMediaUpload
 }
 
+export type StickerPackOptions = {
+	stickers: { data?: WAMediaUpload; image?: WAMediaUpload; emojis?: string[]; accessibilityLabel?: string; isLottie?: boolean }[]
+	cover?: WAMediaUpload
+	name?: string
+	publisher?: string
+	description?: string
+}
+
 export type AnyRegularMessageContent = (
 	| ({
 			text: string
@@ -257,6 +265,7 @@ export type AnyRegularMessageContent = (
 			location: WALocationMessage
 	  }
 	| { react: proto.Message.IReactionMessage }
+	| ({ stickerPack: StickerPackOptions } & Contextable)
 	| {
 			buttonReply: ButtonReplyInfo
 			type: 'template' | 'plain'
