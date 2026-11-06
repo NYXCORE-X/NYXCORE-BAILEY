@@ -674,7 +674,8 @@ export const makeMessagesSocket = (config: SocketConfig) => {
 		}
 
 		await authState.keys.transaction(async () => {
-			const mediaType = getMediaType(message)
+			// Look INSIDE wrappers (group status, view-once, ephemeral…) so the enc node still carries mediatype=
+			const mediaType = getMediaType(normalizeMessageContent(message) || message)
 			if (mediaType) {
 				extraAttrs['mediatype'] = mediaType
 			}
