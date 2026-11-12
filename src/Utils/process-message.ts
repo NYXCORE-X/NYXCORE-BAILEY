@@ -290,6 +290,40 @@ export function decryptEventResponse(
 	}
 }
 
+type SecretEditContext = {
+	/** ID of the ORIGINAL message that was edited */
+	origMsgId: string
+	/** the original message's messageSecret */
+	origSecret: Uint8Array
+	/** jid the original author may be signed under (try phone and LID forms) */
+	origSender: string
+	/** jid of the person who edited */
+	modSender: string
+}
+
+/**
+ * Decrypt an edit sent by the normal WhatsApp app (secretEncryptedMessage / MESSAGE_EDIT).
+ * Same key scheme as poll votes, with the use-case string 'Message Edit'.
+ * Throws if the ids or secret are wrong.
+ */
+export function decryptSecretEdit(
+	{ encPayload, encIv }: proto.Message.ISecretEncryptedMessage,
+	{ origMsgId, origSecret, origSender, modSender }: SecretEditContext
+) {
+	const sign = Buffer.concat([
+		Buffer.from(origMsgId),
+		Buffer.from(origSender),
+		Buffer.from(modSender),
+		Buffer.from('Message Edit'),
+		new Uint8Array([1])
+	])
+	const key0 = hmacSign(origSecret, new Uint8Array(32), 'sha256')
+	const decKey = hmacSign(sign, key0, 'sha256')
+	const aad = Buffer.from(`${origMsgId}\u0000${modSender}`)
+	const decrypted = aesDecryptGCM(encPayload!, decKey, encIv!, aad)
+	return proto.Message.decode(decrypted)
+}
+
 const processMessage = async (
 	message: WAMessage,
 	{
@@ -623,6 +657,73 @@ const processMessage = async (
 			}
 		} else {
 			logger?.warn({ creationMsgKey }, 'event creation message not found, cannot decrypt response')
+		}
+	} else if (
+		content?.secretEncryptedMessage &&
+		content.secretEncryptedMessage.secretEncType === proto.Message.SecretEncryptedMessage.SecretEncType.MESSAGE_EDIT
+	) {
+		// Edits from the real WhatsApp app arrive encrypted. Decrypt with the original message's secret
+		// (needs getMessage to return the original) and surface them like any other edit.
+		const sec = content.secretEncryptedMessage
+		const targetKey = sec.targetMessageKey!
+		const orig = await getMessage(targetKey)
+		const origSecret = orig?.messageContextInfo?.messageSecret
+		if (!orig || !origSecret) {
+			logger?.warn({ targetKey }, 'edit: original message (or its secret) not available, cannot decrypt')
+		} else {
+			const meIdNormalised = jidNormalizedUser(meId)
+			const forms = async (j: string) => {
+				const out = new Set<string>([jidNormalizedUser(j)])
+				try {
+					if (isLidUser(j)) {
+						const pn = await signalRepository.lidMapping.getPNForLID(j)
+						if (pn) out.add(jidNormalizedUser(pn))
+					} else {
+						const lid = await signalRepository.lidMapping.getLIDForPN(j)
+						if (lid) out.add(jidNormalizedUser(lid))
+					}
+				} catch {}
+
+				return [...out]
+			}
+
+			const creators = await forms(
+				targetKey.fromMe ? meIdNormalised : targetKey.participant || targetKey.remoteJid || ''
+			)
+			const editors = await forms(getKeyAuthor(message.key, meIdNormalised))
+			let done = false
+			for (const origSender of creators) {
+				for (const modSender of editors) {
+					if (done) break
+					try {
+						const decoded = decryptSecretEdit(sec, {
+							origMsgId: targetKey.id!,
+							origSecret,
+							origSender,
+							modSender
+						})
+						const edited = decoded.protocolMessage?.editedMessage || decoded.editedMessage?.message || decoded
+						ev.emit('messages.update', [
+							{
+								key: targetKey,
+								update: {
+									message: {
+										editedMessage: { message: edited }
+									},
+									messageTimestamp: toNumber(message.messageTimestamp)
+								}
+							}
+						])
+						done = true
+					} catch {
+						// wrong id spelling — try the next combination
+					}
+				}
+			}
+
+			if (!done) {
+				logger?.warn({ targetKey }, 'edit: could not decrypt (id/secret mismatch)')
+			}
 		}
 	} else if (message.messageStubType) {
 		const jid = message.key?.remoteJid!

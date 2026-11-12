@@ -1316,3 +1316,27 @@ await sock.sendAlbum(jid, [{ image: { url: a }, caption: '1' }, { image: { url: 
 ```
 
 Interactive / native-flow button messages now carry the `<biz>` routing node automatically, so they show up for everyone (groups included) — no wrapper needed.
+
+## NYXCORE additions (v1.0.7)
+
+```js
+// Animate one message by editing it (slot reels, loaders, countdowns)
+await sock.animate(jid, ['🎰 | ❓ ❓ ❓', '🎰 | 🍒 ❓ ❓', '🎰 | 🍒 🍋 ❓', '🎰 | 🍒 🍋 🍒'], { interval: 1200 })
+await sock.typewriter(jid, 'Welcome to the arena...')
+await sock.countdown(jid, 5, { label: 'Heist starts in', doneText: '🚀 GO!' })
+
+// Wait for people (build games without global state)
+const r = await sock.waitForReply(jid, playerJid, { timeout: 20000 })      // { text, message } | null
+const b = await sock.waitForButton(jid, playerJid)                          // { id, message } | null
+const x = await sock.waitForReaction(msg.key, { emoji: '🔫', timeout: 8000 }) // { emoji, from } | null
+
+// Poll quiz
+const poll = await sock.sendQuiz(jid, 'Capital of Nigeria?', ['Lagos', 'Abuja', 'Kano'])
+const { voters } = await sock.collectVotes(poll!, { timeout: 20000 })
+
+// Gentle sending (queued with small random gaps)
+await sock.sendQueued(jid, { text: 'hello' })
+await sock.sendBulk([jid1, jid2], { text: 'announcement' }, { delay: 3000 })
+```
+
+Edits made by people on the normal WhatsApp app (which arrive encrypted) are decrypted when `getMessage` can return the original message, and are emitted as a normal `messages.update` with `editedMessage`.
