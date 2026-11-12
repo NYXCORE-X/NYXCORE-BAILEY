@@ -20,6 +20,7 @@ import {
 	assertMeId,
 	bindWaitForEvent,
 	decryptMediaRetryData,
+	decryptPollVote,
 	DEF_MEDIA_HOST,
 	encodeNewsletterMessage,
 	encodeSignedDeviceIdentity,
@@ -33,10 +34,12 @@ import {
 	generateWAMessageFromContent,
 	getStatusCodeForMediaRetry,
 	getUrlFromDirectPath,
+	getKeyAuthor,
 	getWAUploadToServer,
 	MessageRetryManager,
 	normalizeMessageContent,
 	parseAndInjectE2ESessions,
+	sha256,
 	unixTimestampSeconds
 } from '../Utils'
 import { getUrlInfo } from '../Utils/link-preview'
@@ -1561,5 +1564,307 @@ export const makeMessagesSocket = (config: SocketConfig) => {
 		return sent
 	}
 
-	return { ...messagesSock, sendGroupStatus, sendStatus, sendAlbum }
+	// ───────────────────────── animation helpers ─────────────────────────
+	const sleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms))
+
+	/**
+	 * Animate ONE message by editing it through a list of frames (spinners, slot reels, progress bars).
+	 * Edits are spaced out (min 700ms) so WhatsApp doesn't rate-limit them. Returns the message.
+	 */
+	const animate = async (
+		jid: string,
+		frames: string[],
+		options: MiscMessageGenerationOptions & { interval?: number } = {}
+	) => {
+		if (!Array.isArray(frames) || frames.length === 0) {
+			throw new Boom('animate needs at least one frame', { statusCode: 400 })
+		}
+
+		const interval = Math.max(700, options.interval ?? 1200)
+		const { interval: _ignored, ...sendOptions } = options
+		const first = (await messagesSock.sendMessage(jid, { text: frames[0]! }, sendOptions))!
+		for (let i = 1; i < frames.length; i++) {
+			await sleep(interval)
+			try {
+				await messagesSock.sendMessage(jid, { text: frames[i]!, edit: first.key })
+			} catch (err) {
+				logger.warn({ err }, 'animate: edit failed, stopping early')
+				break
+			}
+		}
+
+		return first
+	}
+
+	/** Type a message out in chunks (an edit-based typewriter effect). */
+	const typewriter = async (
+		jid: string,
+		text: string,
+		options: MiscMessageGenerationOptions & { interval?: number; steps?: number } = {}
+	) => {
+		const words = text.split(/(\s+)/)
+		const steps = Math.max(2, Math.min(options.steps ?? 8, 14))
+		const per = Math.max(1, Math.ceil(words.length / steps))
+		const frames: string[] = []
+		for (let i = per; i < words.length + per; i += per) {
+			const part = words.slice(0, Math.min(i, words.length)).join('')
+			frames.push(i >= words.length ? part : `${part}▌`)
+		}
+
+		return animate(jid, frames, options)
+	}
+
+	/** Count down in place: "Heist starts in 5… 4… 3…". */
+	const countdown = async (
+		jid: string,
+		seconds: number,
+		options: MiscMessageGenerationOptions & { label?: string; doneText?: string } = {}
+	) => {
+		const n = Math.max(1, Math.min(Math.floor(seconds), 20))
+		const label = options.label ?? 'Starting in'
+		const frames: string[] = []
+		for (let i = n; i >= 1; i--) {
+			frames.push(`${label} *${i}*`)
+		}
+
+		frames.push(options.doneText ?? '🚀 *GO!*')
+		const { label: _l, doneText: _d, ...rest } = options
+		return animate(jid, frames, { ...rest, interval: 1000 })
+	}
+
+	// ───────────────────────── waiting for people (game building blocks) ─────────────────────────
+	const sameUser = (a?: string | null, b?: string | null) => {
+		if (!a || !b) return false
+		return jidNormalizedUser(a).split('@')[0] === jidNormalizedUser(b).split('@')[0]
+	}
+
+	const senderMatches = (m: WAMessage, from?: string | string[]) => {
+		if (!from) return true
+		const list = Array.isArray(from) ? from : [from]
+		const ids = [m.key.participant, m.key.participantAlt, m.key.remoteJid, m.key.remoteJidAlt]
+		return list.some(f => ids.some(i => sameUser(i, f)))
+	}
+
+	/** Wait for the next message in a chat (optionally only from certain people / matching a filter). */
+	const waitForMessage = (
+		jid: string,
+		options: { from?: string | string[]; timeout?: number; filter?: (m: WAMessage) => boolean } = {}
+	) =>
+		new Promise<WAMessage | null>(resolve => {
+			const timeout = options.timeout ?? 30_000
+			const done = (m: WAMessage | null) => {
+				clearTimeout(timer)
+				ev.off('messages.upsert', handler)
+				resolve(m)
+			}
+
+			const handler = ({ messages }: { messages: WAMessage[] }) => {
+				for (const m of messages) {
+					if (!m.message || m.key.fromMe || m.key.remoteJid !== jid) continue
+					if (!senderMatches(m, options.from)) continue
+					if (options.filter && !options.filter(m)) continue
+					return done(m)
+				}
+			}
+
+			const timer = setTimeout(() => done(null), timeout)
+			ev.on('messages.upsert', handler)
+		})
+
+	/** Wait for a plain-text reply; resolves with { text, message } or null on timeout. */
+	const waitForReply = async (
+		jid: string,
+		from?: string | string[],
+		options: { timeout?: number; filter?: (text: string, m: WAMessage) => boolean } = {}
+	) => {
+		const m = await waitForMessage(jid, {
+			from,
+			timeout: options.timeout,
+			filter: m2 => {
+				const t = m2.message?.conversation || m2.message?.extendedTextMessage?.text || ''
+				return !!t && (!options.filter || options.filter(t, m2))
+			}
+		})
+		if (!m) return null
+		return { text: m.message?.conversation || m.message?.extendedTextMessage?.text || '', message: m }
+	}
+
+	/** Wait for a button / list tap. Resolves with the tapped id (or null on timeout). */
+	const waitForButton = async (jid: string, from?: string | string[], options: { timeout?: number } = {}) => {
+		const idOf = (m: WAMessage) => {
+			const c = normalizeMessageContent(m.message) || m.message
+			let id = c?.buttonsResponseMessage?.selectedButtonId || c?.templateButtonReplyMessage?.selectedId || c?.listResponseMessage?.singleSelectReply?.selectedRowId || ''
+			const nf = c?.interactiveResponseMessage?.nativeFlowResponseMessage?.paramsJson
+			if (!id && nf) {
+				try {
+					id = JSON.parse(nf)?.id || ''
+				} catch {}
+			}
+
+			return id
+		}
+
+		const m = await waitForMessage(jid, { from, timeout: options.timeout, filter: m2 => !!idOf(m2) })
+		return m ? { id: idOf(m), message: m } : null
+	}
+
+	/** Wait for someone to react to a given message (e.g. "first to react 🔫 wins"). */
+	const waitForReaction = (
+		target: WAMessageKey,
+		options: { from?: string | string[]; emoji?: string; timeout?: number } = {}
+	) =>
+		new Promise<{ emoji: string; from: string } | null>(resolve => {
+			const done = (r: { emoji: string; from: string } | null) => {
+				clearTimeout(timer)
+				ev.off('messages.reaction', handler)
+				resolve(r)
+			}
+
+			const handler = (events: { key: WAMessageKey; reaction: proto.IReaction }[]) => {
+				for (const e of events) {
+					if (e.key.id !== target.id || !e.reaction.text) continue
+					const who = e.reaction.key?.participant || e.reaction.key?.remoteJid || ''
+					if (e.reaction.key?.fromMe) continue
+					if (options.emoji && e.reaction.text !== options.emoji) continue
+					if (options.from && !(Array.isArray(options.from) ? options.from : [options.from]).some(f => sameUser(who, f))) continue
+					return done({ emoji: e.reaction.text, from: who })
+				}
+			}
+
+			const timer = setTimeout(() => done(null), options.timeout ?? 30_000)
+			ev.on('messages.reaction', handler)
+		})
+
+	// ───────────────────────── polls as quizzes ─────────────────────────
+	/** Send a poll and get the message back (hand it to collectVotes). */
+	const sendQuiz = (
+		jid: string,
+		question: string,
+		answers: string[],
+		options: MiscMessageGenerationOptions & { selectableCount?: number } = {}
+	) => {
+		const { selectableCount, ...rest } = options
+		return messagesSock.sendMessage(jid, { poll: { name: question, values: answers, selectableCount: selectableCount ?? 1 } }, rest)
+	}
+
+	/**
+	 * Collect votes on a poll you sent for `timeout` ms.
+	 * Resolves with { voters: { "Answer": ["jid", ...] }, byVoter: { jid: ["Answer"] } }.
+	 */
+	const collectVotes = (pollMsg: WAMessage, options: { timeout?: number } = {}) =>
+		new Promise<{ voters: Record<string, string[]>; byVoter: Record<string, string[]> }>(resolve => {
+			const poll = pollMsg.message?.pollCreationMessage || pollMsg.message?.pollCreationMessageV2 || pollMsg.message?.pollCreationMessageV3
+			const secret = pollMsg.message?.messageContextInfo?.messageSecret
+			const names = (poll?.options || []).map(o => o.optionName!).filter(Boolean)
+			const hashes = names.map(n => Buffer.from(sha256(Buffer.from(n))).toString('hex'))
+			const me = jidNormalizedUser(authState.creds.me!.id)
+			const byVoter: Record<string, string[]> = {}
+			const finish = () => {
+				clearTimeout(timer)
+				ev.off('messages.upsert', handler)
+				const voters: Record<string, string[]> = {}
+				for (const n of names) voters[n] = []
+				for (const [v, picks] of Object.entries(byVoter)) {
+					for (const pick of picks) voters[pick]?.push(v)
+				}
+
+				resolve({ voters, byVoter })
+			}
+
+			const handler = async ({ messages }: { messages: WAMessage[] }) => {
+				for (const m of messages) {
+					const upd = m.message?.pollUpdateMessage
+					if (!upd || upd.pollCreationMessageKey?.id !== pollMsg.key.id || !secret || !upd.vote) continue
+					const voterRaw = getKeyAuthor(m.key, me)
+					const forms = new Set<string>([jidNormalizedUser(voterRaw)])
+					for (const alt of [m.key.participantAlt, m.key.remoteJidAlt]) if (alt) forms.add(jidNormalizedUser(alt))
+					for (const voterJid of forms) {
+						try {
+							const decoded = decryptPollVote(upd.vote, {
+								pollEncKey: secret,
+								pollCreatorJid: me,
+								pollMsgId: pollMsg.key.id!,
+								voterJid
+							})
+							const picked = (decoded.selectedOptions || []).map(h => Buffer.from(h).toString('hex'))
+							byVoter[voterRaw] = picked.map(h => names[hashes.indexOf(h)]).filter(Boolean) as string[]
+							break
+						} catch {
+							// try the next spelling of the voter's id
+						}
+					}
+				}
+			}
+
+			const timer = setTimeout(finish, options.timeout ?? 30_000)
+			ev.on('messages.upsert', handler)
+		})
+
+	// ───────────────────────── polite sending ─────────────────────────
+	const queues = new Map<string, Promise<unknown>>()
+	const lastSentAt = new Map<string, number>()
+
+	/**
+	 * Send through a per-chat queue with a small random gap between messages — gentler on WhatsApp
+	 * (lower ban risk) for broadcasts, game rounds and anything that sends many messages quickly.
+	 */
+	const sendQueued = (
+		jid: string,
+		content: AnyMessageContent,
+		options: MiscMessageGenerationOptions & { minGap?: number; jitter?: number } = {}
+	) => {
+		const { minGap = 900, jitter = 500, ...sendOptions } = options
+		const prev = queues.get(jid) || Promise.resolve()
+		const next = prev
+			.catch(() => undefined)
+			.then(async () => {
+				const wait = (lastSentAt.get(jid) || 0) + minGap + Math.random() * jitter - Date.now()
+				if (wait > 0) await sleep(wait)
+				try {
+					return await messagesSock.sendMessage(jid, content, sendOptions)
+				} finally {
+					lastSentAt.set(jid, Date.now())
+				}
+			})
+		queues.set(jid, next)
+		void next.finally(() => {
+			if (queues.get(jid) === next) queues.delete(jid)
+		})
+		return next as Promise<WAMessage | undefined>
+	}
+
+	/** Send the same content to many chats, one at a time, with a delay between each. */
+	const sendBulk = async (jids: string[], content: AnyMessageContent, options: { delay?: number } = {}) => {
+		const results: { jid: string; ok: boolean; error?: string }[] = []
+		for (const j of jids) {
+			try {
+				await messagesSock.sendMessage(j, content)
+				results.push({ jid: j, ok: true })
+			} catch (err: any) {
+				results.push({ jid: j, ok: false, error: String(err?.message || err) })
+			}
+
+			await sleep((options.delay ?? 2500) + Math.random() * 1000)
+		}
+
+		return results
+	}
+
+	return {
+		...messagesSock,
+		sendGroupStatus,
+		sendStatus,
+		sendAlbum,
+		animate,
+		typewriter,
+		countdown,
+		waitForMessage,
+		waitForReply,
+		waitForButton,
+		waitForReaction,
+		sendQuiz,
+		collectVotes,
+		sendQueued,
+		sendBulk
+	}
 }
