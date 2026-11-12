@@ -1,4 +1,5 @@
 import NodeCache from '@cacheable/node-cache'
+import { randomBytes } from 'crypto'
 import { Boom } from '@hapi/boom'
 import { proto } from '../../WAProto/index.js'
 import { DEFAULT_CACHE_TTLS, WA_DEFAULT_EPHEMERAL } from '../Defaults'
@@ -9,6 +10,7 @@ import type {
 	MessageRelayOptions,
 	MiscMessageGenerationOptions,
 	SocketConfig,
+	WAMediaUpload,
 	WAMessage,
 	WAMessageKey
 } from '../Types'
@@ -27,6 +29,8 @@ import {
 	generateMessageIDV2,
 	generateParticipantHashV2,
 	generateWAMessage,
+	generateWAMessageContent,
+	generateWAMessageFromContent,
 	getStatusCodeForMediaRetry,
 	getUrlFromDirectPath,
 	getWAUploadToServer,
@@ -69,6 +73,36 @@ import {
 } from '../WABinary'
 import { USyncQuery, USyncUser } from '../WAUSync'
 import { makeNewsletterSocket } from './newsletter'
+
+/**
+ * WhatsApp only SHOWS a native-flow / buttons message to other people when the stanza carries the
+ * <biz> routing node (and, in 1-to-1 chats, the <bot> marker). Without it the message is accepted
+ * and only the sender's own devices see it. Built in here so every bot using this library works.
+ */
+const getButtonNodes = (message: proto.IMessage, jid: string): BinaryNode[] | undefined => {
+	const m = normalizeMessageContent(message) || message
+	const hasFlow = !!m?.interactiveMessage?.nativeFlowMessage
+	const hasButtons = !!m?.buttonsMessage
+	if (!hasFlow && !hasButtons) return undefined
+	const nodes: BinaryNode[] = [
+		{
+			tag: 'biz',
+			attrs: {},
+			content: [
+				{
+					tag: 'interactive',
+					attrs: { type: 'native_flow', v: '1' },
+					content: [{ tag: 'native_flow', attrs: { v: '9', name: 'mixed' } }]
+				}
+			]
+		}
+	]
+	if (!/@(g\.us|newsletter|broadcast)$/.test(jid)) {
+		nodes.push({ tag: 'bot', attrs: { biz_bot: '1' } })
+	}
+
+	return nodes
+}
 
 export const makeMessagesSocket = (config: SocketConfig) => {
 	const {
@@ -631,6 +665,14 @@ export const makeMessagesSocket = (config: SocketConfig) => {
 		const isRetryResend = Boolean(participant?.jid)
 		let shouldIncludeDeviceIdentity = isRetryResend
 		const statusJid = 'status@broadcast'
+
+		// make button messages visible to everyone (see getButtonNodes)
+		if (!additionalNodes?.some(n => n.tag === 'biz')) {
+			const buttonNodes = getButtonNodes(message, jid)
+			if (buttonNodes) {
+				additionalNodes = [...(additionalNodes || []), ...buttonNodes]
+			}
+		}
 
 		const { user, server } = jidDecode(jid)!
 		const isGroup = server === 'g.us'
@@ -1261,7 +1303,7 @@ export const makeMessagesSocket = (config: SocketConfig) => {
 		}
 	})
 
-	return {
+	const messagesSock = {
 		...sock,
 		userDevicesCache,
 		devicesMutex,
@@ -1419,4 +1461,105 @@ export const makeMessagesSocket = (config: SocketConfig) => {
 			}
 		}
 	}
+
+	/**
+	 * Post a status inside a GROUP (the "group status" shown in the group's header).
+	 * content: any normal message content ({ text }, { image }, { video }, { audio } ...).
+	 */
+	const sendGroupStatus = async (
+		groupJid: string,
+		content: AnyMessageContent,
+		options: MiscMessageGenerationOptions & { backgroundColor?: string; font?: number } = {}
+	) => {
+		if (!isJidGroup(groupJid)) {
+			throw new Boom('sendGroupStatus needs a group JID (...@g.us)', { statusCode: 400 })
+		}
+
+		const userJid = authState.creds.me!.id
+		const inner = await generateWAMessageContent(content, {
+			logger,
+			jid: groupJid,
+			upload: waUploadToServer,
+			mediaCache: config.mediaCache,
+			options: config.options,
+			backgroundColor: options.backgroundColor,
+			font: options.font
+		})
+		const secret = randomBytes(32)
+		const full = generateWAMessageFromContent(
+			groupJid,
+			{
+				messageContextInfo: { messageSecret: secret },
+				groupStatusMessageV2: { message: { ...inner, messageContextInfo: { messageSecret: secret } } }
+			},
+			{ userJid, messageId: generateMessageIDV2(userJid) }
+		)
+		await relayMessage(groupJid, full.message!, { messageId: full.key.id! })
+		return full
+	}
+
+	/**
+	 * Post a normal status (story). statusJidList = who receives it; your own number is always
+	 * added, and anyone in content.mentions is added too so mentioned people actually get it.
+	 */
+	const sendStatus = async (
+		content: AnyMessageContent,
+		options: MiscMessageGenerationOptions & { statusJidList: string[]; backgroundColor?: string; font?: number }
+	) => {
+		const me = jidNormalizedUser(authState.creds.me!.id)
+		const mentions = ((content as { mentions?: string[] }).mentions || []).map(j => jidNormalizedUser(j))
+		const list = Array.from(new Set([me, ...(options.statusJidList || []).map(j => jidNormalizedUser(j)), ...mentions]))
+		return messagesSock.sendMessage('status@broadcast', content, { ...options, statusJidList: list })
+	}
+
+	/**
+	 * Send several photos/videos as ONE grouped album (the swipeable album bubble).
+	 */
+	const sendAlbum = async (
+		jid: string,
+		items: Array<({ image: WAMediaUpload } | { video: WAMediaUpload }) & { caption?: string }>,
+		options: MiscMessageGenerationOptions = {}
+	) => {
+		if (!Array.isArray(items) || items.length < 2) {
+			throw new Boom('sendAlbum needs at least 2 images/videos', { statusCode: 400 })
+		}
+
+		const userJid = authState.creds.me!.id
+		const images = items.filter(i => 'image' in i).length
+		const videos = items.filter(i => 'video' in i).length
+		const albumMsg = generateWAMessageFromContent(
+			jid,
+			{ albumMessage: { expectedImageCount: images, expectedVideoCount: videos } },
+			{ userJid, messageId: generateMessageIDV2(userJid), quoted: options.quoted }
+		)
+		await relayMessage(jid, albumMsg.message!, { messageId: albumMsg.key.id! })
+
+		const sent: WAMessage[] = [albumMsg]
+		for (const item of items) {
+			const full = await generateWAMessage(jid, item as AnyMessageContent, {
+				logger,
+				userJid,
+				upload: waUploadToServer,
+				mediaCache: config.mediaCache,
+				options: config.options,
+				messageId: generateMessageIDV2(userJid),
+				...options
+			})
+			// the link between an album and its photos/videos lives in the message-level context info
+			full.message!.messageContextInfo = {
+				...(full.message!.messageContextInfo || {}),
+				messageAssociation: {
+					associationType: proto.MessageAssociation.AssociationType.MEDIA_ALBUM,
+					parentMessageKey: albumMsg.key
+				}
+			}
+
+			await relayMessage(jid, full.message!, { messageId: full.key.id! })
+			sent.push(full)
+		}
+
+		return sent
+	}
+
+	return { ...messagesSock, sendGroupStatus, sendStatus, sendAlbum }
 }

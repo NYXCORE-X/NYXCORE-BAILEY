@@ -1300,3 +1300,19 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 Thus, the maintainers of the project can't be held liable for any potential misuse of this project.
+
+## NYXCORE additions (v1.0.6)
+
+```js
+// Group status (the status shown in a group) — text, image, video, audio
+await sock.sendGroupStatus(groupJid, { text: 'Hello group' })
+await sock.sendGroupStatus(groupJid, { image: { url }, caption: 'Look' })
+
+// Normal status with a chosen audience (mentioned people are added automatically)
+await sock.sendStatus({ text: 'Hi', mentions: [jid] }, { statusJidList: [jid1, jid2] })
+
+// Several photos/videos as ONE swipeable album
+await sock.sendAlbum(jid, [{ image: { url: a }, caption: '1' }, { image: { url: b } }, { video: { url: c } }])
+```
+
+Interactive / native-flow button messages now carry the `<biz>` routing node automatically, so they show up for everyone (groups included) — no wrapper needed.
