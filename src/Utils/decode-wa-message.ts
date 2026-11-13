@@ -339,7 +339,15 @@ export const decryptMessageNode = (
 						let msg: proto.IMessage = proto.Message.decode(
 							e2eType !== 'plaintext' ? unpadRandomMax16(msgBuffer) : msgBuffer
 						)
+						// Messages typed on the account's own phone arrive wrapped in deviceSentMessage. The
+						// messageSecret (needed to decrypt later edits/votes/reactions) sits on the OUTER message,
+						// so keep it when unwrapping instead of throwing it away.
+						const outerSecret = msg.messageContextInfo?.messageSecret
 						msg = msg.deviceSentMessage?.message || msg
+						if (outerSecret?.length && !msg.messageContextInfo?.messageSecret?.length) {
+							msg.messageContextInfo = { ...(msg.messageContextInfo || {}), messageSecret: outerSecret }
+						}
+
 						if (msg.senderKeyDistributionMessage) {
 							//eslint-disable-next-line max-depth
 							try {
