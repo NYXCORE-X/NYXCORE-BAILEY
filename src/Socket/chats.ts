@@ -47,6 +47,7 @@ import {
 } from '../Utils'
 import { makeMutex } from '../Utils/make-mutex'
 import processMessage from '../Utils/process-message'
+import { makeSecretStore } from '../Utils/secret-store'
 import { buildTcTokenFromJid } from '../Utils/tc-token-utils'
 import {
 	type BinaryNode,
@@ -87,6 +88,8 @@ export const makeChatsSocket = (config: SocketConfig) => {
 		getMessage
 	} = config
 	const sock = makeSocket(config)
+	/** remembers message secrets so edits / poll votes / event responses can be decrypted */
+	const secretStore = makeSecretStore(config.secretStore || {})
 	const {
 		ev,
 		ws,
@@ -1310,6 +1313,8 @@ export const makeChatsSocket = (config: SocketConfig) => {
 			}
 		}
 
+		secretStore.remember(msg)
+
 		await Promise.all([
 			(async () => {
 				if (shouldProcessHistoryMsg) {
@@ -1325,7 +1330,8 @@ export const makeChatsSocket = (config: SocketConfig) => {
 				keyStore: authState.keys,
 				logger,
 				options: config.options,
-				getMessage
+				getMessage,
+				secretStore
 			})
 		])
 
@@ -1517,6 +1523,9 @@ export const makeChatsSocket = (config: SocketConfig) => {
 		getBusinessProfile,
 		resyncAppState,
 		chatModify,
+		secretStore,
+		getAppStateSyncKey,
+		getSyncState: () => SyncState[syncState],
 		cleanDirtyBits,
 		addOrEditContact,
 		removeContact,

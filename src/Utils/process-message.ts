@@ -30,7 +30,8 @@ import {
 	jidEncode,
 	jidNormalizedUser
 } from '../WABinary'
-import { aesDecryptGCM, hmacSign } from './crypto'
+import { aesDecryptGCM, hmacSign, sha256 } from './crypto'
+import type { SecretStore } from './secret-store'
 import { getKeyAuthor, toNumber } from './generics'
 import { downloadAndProcessHistorySyncNotification } from './history'
 import type { ILogger } from './logger'
@@ -46,6 +47,7 @@ type ProcessMessageContext = {
 	options: RequestInit
 	signalRepository: SignalRepositoryWithLIDStore
 	getMessage: SocketConfig['getMessage']
+	secretStore?: SecretStore
 }
 
 const REAL_MSG_STUB_TYPES = new Set([
@@ -335,11 +337,56 @@ const processMessage = async (
 		keyStore,
 		logger,
 		options,
-		getMessage
+		getMessage,
+		secretStore
 	}: ProcessMessageContext
 ) => {
 	const meId = creds.me!.id
 	const { accountSettings } = creds
+
+	// every spelling (phone / LID) of a jid, because WhatsApp signs with either one
+	const jidForms = async (j: string) => {
+		const out = new Set<string>([jidNormalizedUser(j)])
+		try {
+			if (isLidUser(j)) {
+				const pn = await signalRepository.lidMapping.getPNForLID(j)
+				if (pn) out.add(jidNormalizedUser(pn))
+			} else {
+				const lid = await signalRepository.lidMapping.getLIDForPN(j)
+				if (lid) out.add(jidNormalizedUser(lid))
+			}
+		} catch {}
+
+		return [...out]
+	}
+
+	/** the secret of a message: from getMessage, else from the secret store */
+	const secretFor = async (key: proto.IMessageKey) => {
+		let s: Uint8Array | null | undefined
+		try {
+			const m = await getMessage(key)
+			s = m?.messageContextInfo?.messageSecret || m?.deviceSentMessage?.message?.messageContextInfo?.messageSecret
+		} catch {}
+
+		return s && s.length ? s : secretStore?.getSecret(key.id)
+	}
+
+	/** all jids that may stand for a message's author */
+	const authorForms = async (key: proto.IMessageKey, extra: (string | null | undefined)[] = []) => {
+		const meIdNormalised = jidNormalizedUser(meId)
+		const raw = [
+			key.fromMe ? meIdNormalised : key.participant || key.remoteJid,
+			key.fromMe ? jidNormalizedUser(creds.me?.lid || '') : undefined,
+			...extra
+		]
+		const out = new Set<string>()
+		for (const r of raw) {
+			if (!r) continue
+			for (const f of await jidForms(r)) out.add(f)
+		}
+
+		return [...out].filter(Boolean)
+	}
 
 	const chat: Partial<Chat> = { id: jidNormalizedUser(getChatId(message.key)) }
 	const isRealMsg = isRealMessage(message)
@@ -609,7 +656,11 @@ const processMessage = async (
 		const creationMsgKey = encEventResponse.eventCreationMessageKey!
 
 		// we need to fetch the event creation message to get the event enc key
-		const eventMsg = await getMessage(creationMsgKey)
+		let eventMsg = await getMessage(creationMsgKey)
+		if (!eventMsg?.messageContextInfo?.messageSecret) {
+			const sec = secretStore?.getSecret(creationMsgKey.id)
+			if (sec) eventMsg = { ...(eventMsg || {}), messageContextInfo: { messageSecret: sec } }
+		}
 		if (eventMsg) {
 			try {
 				const meIdNormalised = jidNormalizedUser(meId)
@@ -666,31 +717,12 @@ const processMessage = async (
 		// (needs getMessage to return the original) and surface them like any other edit.
 		const sec = content.secretEncryptedMessage
 		const targetKey = sec.targetMessageKey!
-		const orig = await getMessage(targetKey)
-		const origSecret = orig?.messageContextInfo?.messageSecret
-		if (!orig || !origSecret) {
-			logger?.warn({ targetKey }, 'edit: original message (or its secret) not available, cannot decrypt')
+		const origSecret = await secretFor(targetKey)
+		if (!origSecret) {
+			logger?.warn({ targetKey }, 'edit: secret of the original message not available, cannot decrypt')
 		} else {
-			const meIdNormalised = jidNormalizedUser(meId)
-			const forms = async (j: string) => {
-				const out = new Set<string>([jidNormalizedUser(j)])
-				try {
-					if (isLidUser(j)) {
-						const pn = await signalRepository.lidMapping.getPNForLID(j)
-						if (pn) out.add(jidNormalizedUser(pn))
-					} else {
-						const lid = await signalRepository.lidMapping.getLIDForPN(j)
-						if (lid) out.add(jidNormalizedUser(lid))
-					}
-				} catch {}
-
-				return [...out]
-			}
-
-			const creators = await forms(
-				targetKey.fromMe ? meIdNormalised : targetKey.participant || targetKey.remoteJid || ''
-			)
-			const editors = await forms(getKeyAuthor(message.key, meIdNormalised))
+			const creators = await authorForms(targetKey)
+			const editors = await authorForms(message.key, [message.key.participantAlt, message.key.remoteJidAlt])
 			let done = false
 			for (const origSender of creators) {
 				for (const modSender of editors) {
@@ -703,6 +735,7 @@ const processMessage = async (
 							modSender
 						})
 						const edited = decoded.protocolMessage?.editedMessage || decoded.editedMessage?.message || decoded
+						const ts = toNumber(message.messageTimestamp)
 						ev.emit('messages.update', [
 							{
 								key: targetKey,
@@ -710,8 +743,23 @@ const processMessage = async (
 									message: {
 										editedMessage: { message: edited }
 									},
-									messageTimestamp: toNumber(message.messageTimestamp)
+									messageTimestamp: ts
 								}
+							}
+						])
+						const inner = normalizeMessageContent(edited)
+						ev.emit('messages.edit', [
+							{
+								key: targetKey,
+								editor: modSender,
+								message: edited,
+								text:
+									inner?.conversation ||
+									inner?.extendedTextMessage?.text ||
+									inner?.imageMessage?.caption ||
+									inner?.videoMessage?.caption ||
+									undefined,
+								timestamp: ts
 							}
 						])
 						done = true
@@ -723,6 +771,60 @@ const processMessage = async (
 
 			if (!done) {
 				logger?.warn({ targetKey }, 'edit: could not decrypt (id/secret mismatch)')
+			}
+		}
+	} else if (content?.pollUpdateMessage) {
+		const pu = content.pollUpdateMessage
+		const creationMsgKey = pu.pollCreationMessageKey!
+		const pollEncKey = await secretFor(creationMsgKey)
+		if (!pollEncKey || !pu.vote) {
+			logger?.warn({ creationMsgKey }, 'poll vote: poll secret not available, cannot decrypt')
+		} else {
+			const creators = await authorForms(creationMsgKey)
+			const voters = await authorForms(message.key, [message.key.participantAlt, message.key.remoteJidAlt])
+			let done = false
+			for (const pollCreatorJid of creators) {
+				for (const voterJid of voters) {
+					if (done) break
+					try {
+						const voteMsg = decryptPollVote(pu.vote, {
+							pollEncKey,
+							pollCreatorJid,
+							pollMsgId: creationMsgKey.id!,
+							voterJid
+						})
+						const ts = pu.senderTimestampMs ? toNumber(pu.senderTimestampMs) : Date.now()
+						ev.emit('messages.update', [
+							{
+								key: creationMsgKey,
+								update: {
+									pollUpdates: [{ pollUpdateMessageKey: message.key, vote: voteMsg, senderTimestampMs: ts }]
+								}
+							}
+						])
+						const hashes = (voteMsg.selectedOptions || []).map(h => new Uint8Array(h))
+						const names = secretStore?.get(creationMsgKey.id)?.p || []
+						const byHash = new Map(names.map(n => [Buffer.from(sha256(Buffer.from(n))).toString('hex'), n]))
+						ev.emit('poll.vote', [
+							{
+								pollKey: creationMsgKey,
+								voter: voterJid,
+								voterIds: voters,
+								options: hashes.map(h => byHash.get(Buffer.from(h).toString('hex')) || Buffer.from(h).toString('hex')),
+								hashes,
+								timestamp: ts,
+								voteKey: message.key
+							}
+						])
+						done = true
+					} catch {
+						// try the next phone/LID spelling
+					}
+				}
+			}
+
+			if (!done) {
+				logger?.warn({ creationMsgKey }, 'poll vote: could not decrypt (id/secret mismatch)')
 			}
 		}
 	} else if (message.messageStubType) {
@@ -835,55 +937,7 @@ const processMessage = async (
 				emitGroupRequestJoin(participant, action, method)
 				break
 		}
-	} /*  else if(content?.pollUpdateMessage) {
-		const creationMsgKey = content.pollUpdateMessage.pollCreationMessageKey!
-		// we need to fetch the poll creation message to get the poll enc key
-		// TODO: make standalone, remove getMessage reference
-		// TODO: Remove entirely
-		const pollMsg = await getMessage(creationMsgKey)
-		if(pollMsg) {
-			const meIdNormalised = jidNormalizedUser(meId)
-			const pollCreatorJid = getKeyAuthor(creationMsgKey, meIdNormalised)
-			const voterJid = getKeyAuthor(message.key, meIdNormalised)
-			const pollEncKey = pollMsg.messageContextInfo?.messageSecret!
-
-			try {
-				const voteMsg = decryptPollVote(
-					content.pollUpdateMessage.vote!,
-					{
-						pollEncKey,
-						pollCreatorJid,
-						pollMsgId: creationMsgKey.id!,
-						voterJid,
-					}
-				)
-				ev.emit('messages.update', [
-					{
-						key: creationMsgKey,
-						update: {
-							pollUpdates: [
-								{
-									pollUpdateMessageKey: message.key,
-									vote: voteMsg,
-									senderTimestampMs: (content.pollUpdateMessage.senderTimestampMs! as Long).toNumber(),
-								}
-							]
-						}
-					}
-				])
-			} catch(err) {
-				logger?.warn(
-					{ err, creationMsgKey },
-					'failed to decrypt poll vote'
-				)
-			}
-		} else {
-			logger?.warn(
-				{ creationMsgKey },
-				'poll creation message not found, cannot decrypt update'
-			)
-		}
-		} */
+	}
 
 	if (Object.keys(chat).length > 1) {
 		ev.emit('chats.update', [chat])

@@ -142,6 +142,18 @@ export type SocketConfig = {
 	 * */
 	getMessage: (key: WAMessageKey) => Promise<proto.IMessage | undefined>
 
+	/**
+	 * Remember each message's secret so edits, poll votes and event responses can be decrypted
+	 * (even after a restart when `path` is set). Memory-only when `path` is left out.
+	 */
+	secretStore?: { path?: string; max?: number }
+
+	/**
+	 * Check the app-state key when the connection opens and ask your phone for it if it's missing
+	 * (needed for chatModify / deleteForMe). Default true.
+	 */
+	autoRepairAppStateKey?: boolean
+
 	/** cached group metadata, use to prevent redundant requests to WA & speed up msg sending */
 	cachedGroupMetadata: (jid: string) => Promise<GroupMetadata | undefined>
 

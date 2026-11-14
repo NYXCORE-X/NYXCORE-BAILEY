@@ -72,6 +72,35 @@ export type BaileysEventMap = {
 	/** message was reacted to. If reaction was removed -- then "reaction.text" will be falsey */
 	'messages.reaction': { key: WAMessageKey; reaction: proto.IReaction }[]
 
+	/** someone edited a message and it could be read (works for edits from the normal WhatsApp app too) */
+	'messages.edit': {
+		/** key of the ORIGINAL message */
+		key: WAMessageKey
+		/** who edited it */
+		editor: string
+		/** the new content */
+		message: proto.IMessage
+		/** the new text, when it's a text message */
+		text?: string
+		timestamp: number
+	}[]
+	/** someone voted on a poll (decrypted) */
+	'poll.vote': {
+		/** key of the poll message */
+		pollKey: WAMessageKey
+		/** who voted (jid as received) */
+		voter: string
+		/** every jid form we know for the voter (phone and LID) */
+		voterIds: string[]
+		/** chosen option names (empty array = vote removed) — hashes if names are unknown */
+		options: string[]
+		/** raw sha256 hashes of the chosen options */
+		hashes: Uint8Array[]
+		timestamp: number
+		/** key of the vote message itself */
+		voteKey: WAMessageKey
+	}[]
+
 	'message-receipt.update': MessageUserReceiptUpdate[]
 
 	'groups.upsert': GroupMetadata[]

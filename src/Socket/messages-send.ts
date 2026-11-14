@@ -12,7 +12,8 @@ import type {
 	SocketConfig,
 	WAMediaUpload,
 	WAMessage,
-	WAMessageKey
+	WAMessageKey,
+	BaileysEventMap
 } from '../Types'
 import {
 	aggregateMessageKeysNotFromMe,
@@ -42,7 +43,9 @@ import {
 	sha256,
 	unixTimestampSeconds
 } from '../Utils'
+import { downloadMediaMessage } from '../Utils/messages'
 import { getUrlInfo } from '../Utils/link-preview'
+import { hasFfmpeg, makeSticker as buildSticker, toVoiceNote, type StickerOptions } from '../Utils/media-helpers'
 import { makeKeyedMutex, makeMutex } from '../Utils/make-mutex'
 import { getMessageReportingToken, shouldIncludeReportingToken } from '../Utils/reporting-utils'
 import {
@@ -1412,6 +1415,7 @@ export const makeMessagesSocket = (config: SocketConfig) => {
 					messageId: generateMessageIDV2(sock.user?.id),
 					...options
 				})
+				sock.secretStore.remember(fullMsg)
 				const isEventMsg = 'event' in content && !!content.event
 				const isDeleteMsg = 'delete' in content && !!content.delete
 				const isEditMsg = 'edit' in content && !!content.edit
@@ -1648,7 +1652,7 @@ export const makeMessagesSocket = (config: SocketConfig) => {
 	/** Wait for the next message in a chat (optionally only from certain people / matching a filter). */
 	const waitForMessage = (
 		jid: string,
-		options: { from?: string | string[]; timeout?: number; filter?: (m: WAMessage) => boolean } = {}
+		options: { from?: string | string[]; timeout?: number; filter?: (m: WAMessage) => boolean; includeSelf?: boolean } = {}
 	) =>
 		new Promise<WAMessage | null>(resolve => {
 			const timeout = options.timeout ?? 30_000
@@ -1660,7 +1664,7 @@ export const makeMessagesSocket = (config: SocketConfig) => {
 
 			const handler = ({ messages }: { messages: WAMessage[] }) => {
 				for (const m of messages) {
-					if (!m.message || m.key.fromMe || m.key.remoteJid !== jid) continue
+					if (!m.message || (m.key.fromMe && !options.includeSelf) || m.key.remoteJid !== jid) continue
 					if (!senderMatches(m, options.from)) continue
 					if (options.filter && !options.filter(m)) continue
 					return done(m)
@@ -1675,11 +1679,12 @@ export const makeMessagesSocket = (config: SocketConfig) => {
 	const waitForReply = async (
 		jid: string,
 		from?: string | string[],
-		options: { timeout?: number; filter?: (text: string, m: WAMessage) => boolean } = {}
+		options: { timeout?: number; includeSelf?: boolean; filter?: (text: string, m: WAMessage) => boolean } = {}
 	) => {
 		const m = await waitForMessage(jid, {
 			from,
 			timeout: options.timeout,
+			includeSelf: options.includeSelf,
 			filter: m2 => {
 				const t = m2.message?.conversation || m2.message?.extendedTextMessage?.text || ''
 				return !!t && (!options.filter || options.filter(t, m2))
@@ -1690,7 +1695,7 @@ export const makeMessagesSocket = (config: SocketConfig) => {
 	}
 
 	/** Wait for a button / list tap. Resolves with the tapped id (or null on timeout). */
-	const waitForButton = async (jid: string, from?: string | string[], options: { timeout?: number } = {}) => {
+	const waitForButton = async (jid: string, from?: string | string[], options: { timeout?: number; includeSelf?: boolean } = {}) => {
 		const idOf = (m: WAMessage) => {
 			const c = normalizeMessageContent(m.message) || m.message
 			let id = c?.buttonsResponseMessage?.selectedButtonId || c?.templateButtonReplyMessage?.selectedId || c?.listResponseMessage?.singleSelectReply?.selectedRowId || ''
@@ -1704,14 +1709,14 @@ export const makeMessagesSocket = (config: SocketConfig) => {
 			return id
 		}
 
-		const m = await waitForMessage(jid, { from, timeout: options.timeout, filter: m2 => !!idOf(m2) })
+		const m = await waitForMessage(jid, { from, timeout: options.timeout, includeSelf: options.includeSelf, filter: m2 => !!idOf(m2) })
 		return m ? { id: idOf(m), message: m } : null
 	}
 
 	/** Wait for someone to react to a given message (e.g. "first to react 🔫 wins"). */
 	const waitForReaction = (
 		target: WAMessageKey,
-		options: { from?: string | string[]; emoji?: string; timeout?: number } = {}
+		options: { from?: string | string[]; emoji?: string; timeout?: number; includeSelf?: boolean } = {}
 	) =>
 		new Promise<{ emoji: string; from: string } | null>(resolve => {
 			const done = (r: { emoji: string; from: string } | null) => {
@@ -1724,7 +1729,7 @@ export const makeMessagesSocket = (config: SocketConfig) => {
 				for (const e of events) {
 					if (e.key.id !== target.id || !e.reaction.text) continue
 					const who = e.reaction.key?.participant || e.reaction.key?.remoteJid || ''
-					if (e.reaction.key?.fromMe) continue
+					if (e.reaction.key?.fromMe && !options.includeSelf) continue
 					if (options.emoji && e.reaction.text !== options.emoji) continue
 					if (options.from && !(Array.isArray(options.from) ? options.from : [options.from]).some(f => sameUser(who, f))) continue
 					return done({ emoji: e.reaction.text, from: who })
@@ -1754,14 +1759,13 @@ export const makeMessagesSocket = (config: SocketConfig) => {
 	const collectVotes = (pollMsg: WAMessage, options: { timeout?: number } = {}) =>
 		new Promise<{ voters: Record<string, string[]>; byVoter: Record<string, string[]> }>(resolve => {
 			const poll = pollMsg.message?.pollCreationMessage || pollMsg.message?.pollCreationMessageV2 || pollMsg.message?.pollCreationMessageV3
-			const secret = pollMsg.message?.messageContextInfo?.messageSecret
 			const names = (poll?.options || []).map(o => o.optionName!).filter(Boolean)
-			const hashes = names.map(n => Buffer.from(sha256(Buffer.from(n))).toString('hex'))
-			const me = jidNormalizedUser(authState.creds.me!.id)
+			// make sure the secret + option names are known even if this poll was not seen before
+			sock.secretStore.remember(pollMsg)
 			const byVoter: Record<string, string[]> = {}
 			const finish = () => {
 				clearTimeout(timer)
-				ev.off('messages.upsert', handler)
+				ev.off('poll.vote', handler)
 				const voters: Record<string, string[]> = {}
 				for (const n of names) voters[n] = []
 				for (const [v, picks] of Object.entries(byVoter)) {
@@ -1771,33 +1775,15 @@ export const makeMessagesSocket = (config: SocketConfig) => {
 				resolve({ voters, byVoter })
 			}
 
-			const handler = async ({ messages }: { messages: WAMessage[] }) => {
-				for (const m of messages) {
-					const upd = m.message?.pollUpdateMessage
-					if (!upd || upd.pollCreationMessageKey?.id !== pollMsg.key.id || !secret || !upd.vote) continue
-					const voterRaw = getKeyAuthor(m.key, me)
-					const forms = new Set<string>([jidNormalizedUser(voterRaw)])
-					for (const alt of [m.key.participantAlt, m.key.remoteJidAlt]) if (alt) forms.add(jidNormalizedUser(alt))
-					for (const voterJid of forms) {
-						try {
-							const decoded = decryptPollVote(upd.vote, {
-								pollEncKey: secret,
-								pollCreatorJid: me,
-								pollMsgId: pollMsg.key.id!,
-								voterJid
-							})
-							const picked = (decoded.selectedOptions || []).map(h => Buffer.from(h).toString('hex'))
-							byVoter[voterRaw] = picked.map(h => names[hashes.indexOf(h)]).filter(Boolean) as string[]
-							break
-						} catch {
-							// try the next spelling of the voter's id
-						}
-					}
+			const handler = (votes: BaileysEventMap['poll.vote']) => {
+				for (const v of votes) {
+					if (v.pollKey.id !== pollMsg.key.id) continue
+					byVoter[v.voter] = v.options.filter(o => names.includes(o))
 				}
 			}
 
 			const timer = setTimeout(finish, options.timeout ?? 30_000)
-			ev.on('messages.upsert', handler)
+			ev.on('poll.vote', handler)
 		})
 
 	// ───────────────────────── polite sending ─────────────────────────
@@ -1850,8 +1836,237 @@ export const makeMessagesSocket = (config: SocketConfig) => {
 		return results
 	}
 
+	// ───────────────────────── app-state key repair / deleteForMe ─────────────────────────
+	let lastKeyCheck = 0
+
+	/** Ask your phone to send the app-state key again (needed for chatModify / deleteForMe). */
+	const requestAppStateKey = async () => {
+		const id = authState.creds.myAppStateKeyId
+		if (!id || !authState.creds.me?.id) return false
+		await relayMessage(
+			jidNormalizedUser(authState.creds.me.id),
+			{
+				protocolMessage: {
+					type: proto.Message.ProtocolMessage.Type.APP_STATE_SYNC_KEY_REQUEST,
+					appStateSyncKeyRequest: { keyIds: [{ keyId: Buffer.from(id, 'base64') }] }
+				}
+			},
+			{
+				additionalAttributes: { category: 'peer', push_priority: 'high_force' },
+				additionalNodes: [{ tag: 'meta', attrs: { appdata: 'default' } }]
+			}
+		)
+		return true
+	}
+
+	/**
+	 * Check that the app-state key is stored; if not, ask the phone for it.
+	 * Runs automatically after connecting (set `autoRepairAppStateKey: false` to disable).
+	 */
+	const ensureAppStateKey = async (options: { force?: boolean } = {}) => {
+		const keyId = authState.creds.myAppStateKeyId || null
+		const present = !!keyId && !!(await sock.getAppStateSyncKey(keyId))
+		if (present) return { present: true, requested: false, keyId }
+		if (!keyId) return { present: false, requested: false, keyId, reason: 'no key id yet (link the device / wait for the first sync)' }
+		if (!options.force && Date.now() - lastKeyCheck < 10 * 60_000) return { present: false, requested: false, keyId, reason: 'asked recently' }
+		lastKeyCheck = Date.now()
+		let requested = false
+		try {
+			requested = await requestAppStateKey()
+		} catch (err) {
+			logger.warn({ err }, 'app-state key request failed')
+		}
+
+		return { present: false, requested, keyId }
+	}
+
+	/**
+	 * Delete a message only for you (it disappears from your own chat list, nobody else is affected).
+	 * Throws a clear error if the app-state key is missing (and asks your phone for it).
+	 */
+	const deleteForMe = async (key: WAMessageKey, timestamp?: number) => {
+		const state = await ensureAppStateKey()
+		if (!state.present) {
+			throw new Boom(
+				'App-state key is missing, so "delete for me" cannot be synced. Your phone was asked for it — open WhatsApp on the phone and retry, or re-link the device.',
+				{ statusCode: 428 }
+			)
+		}
+
+		return sock.chatModify(
+			{ deleteForMe: { deleteMedia: false, key, timestamp: timestamp ?? unixTimestampSeconds() } },
+			key.remoteJid!
+		)
+	}
+
+	if (config.autoRepairAppStateKey !== false) {
+		ev.on('connection.update', ({ connection }) => {
+			if (connection !== 'open') return
+			// give the first app-state sync a moment to deliver the key before checking
+			const t = setTimeout(() => ensureAppStateKey().catch(() => undefined), 25_000)
+			;(t as unknown as { unref?: () => void }).unref?.()
+		})
+	}
+
+	// ───────────────────────── diagnose ─────────────────────────
+	/** One call that tells you whether the connection is healthy. */
+	const diagnose = async () => {
+		const creds = authState.creds
+		const out: Record<string, unknown> = {
+			connected: sock.ws.isOpen,
+			user: creds.me?.id || null,
+			lid: creds.me?.lid || null,
+			syncState: sock.getSyncState(),
+			queues: queues.size,
+			secretStore: { size: sock.secretStore.size, persistent: sock.secretStore.persistent, path: sock.secretStore.path || null }
+		}
+		try {
+			const keyId = creds.myAppStateKeyId || null
+			out.appStateKey = { id: keyId, present: !!keyId && !!(await sock.getAppStateSyncKey(keyId)) }
+		} catch (err) {
+			out.appStateKey = { error: String(err) }
+		}
+
+		try {
+			out.preKeysOnServer = await sock.getAvailablePreKeysOnServer()
+		} catch (err) {
+			out.preKeysOnServer = null
+		}
+
+		out.registered = creds.registered
+		out.nextPreKeyId = creds.nextPreKeyId
+		out.firstUnuploadedPreKeyId = creds.firstUnuploadedPreKeyId
+		const problems: string[] = []
+		if (!out.connected) problems.push('socket is not open')
+		if ((out.appStateKey as any)?.present === false) problems.push('app-state key missing (use ensureAppStateKey / re-link)')
+		if (typeof out.preKeysOnServer === 'number' && out.preKeysOnServer < 10) problems.push('few pre-keys on the server')
+		out.problems = problems
+		out.healthy = problems.length === 0
+		return out
+	}
+
+	// ───────────────────────── media helpers ─────────────────────────
+	/** Build a 512x512 webp sticker (with pack name / author) from an image, gif or video. */
+	const makeSticker = (input: Buffer | Uint8Array | string, options: StickerOptions = {}) => buildSticker(input, options)
+
+	/** Make a sticker and send it. */
+	const sendSticker = async (
+		jid: string,
+		input: Buffer | Uint8Array | string,
+		options: StickerOptions & MiscMessageGenerationOptions = {}
+	) => {
+		const { pack, author, emojis, fit, quality, animated, ...sendOptions } = options
+		const sticker = await buildSticker(input, { pack, author, emojis, fit, quality, animated })
+		return messagesSock.sendMessage(jid, { sticker }, sendOptions)
+	}
+
+	/** Convert audio/video to a voice note (ogg/opus, needs ffmpeg) and send it as one. */
+	const sendVoiceNote = async (jid: string, input: Buffer | Uint8Array | string, options: MiscMessageGenerationOptions = {}) => {
+		const audio = await toVoiceNote(input)
+		return messagesSock.sendMessage(jid, { audio, ptt: true, mimetype: 'audio/ogg; codecs=opus' }, options)
+	}
+
+	/** Open a view-once message: returns { type, buffer, mimetype, caption } (resend it with sendMessage). */
+	const openViewOnce = async (msg: WAMessage) => {
+		const wrapped = msg.message
+		const inner = normalizeMessageContent(wrapped)
+		const type = (['imageMessage', 'videoMessage', 'audioMessage'] as const).find(t => inner?.[t])
+		if (!type || !inner) throw new Boom('That message has no image/video/audio to open', { statusCode: 400 })
+		const media = inner[type] as proto.Message.IImageMessage & proto.Message.IVideoMessage & proto.Message.IAudioMessage
+		const buffer = await downloadMediaMessage(
+			{ ...msg, message: { [type]: media } } as WAMessage,
+			'buffer',
+			{},
+			{ logger, reuploadRequest: messagesSock.updateMediaMessage }
+		)
+		return {
+			type: type.replace('Message', '') as 'image' | 'video' | 'audio',
+			buffer: buffer as Buffer,
+			mimetype: media.mimetype || undefined,
+			caption: media.caption || undefined,
+			viewOnce: !!media.viewOnce
+		}
+	}
+
+	// ───────────────────────── events (RSVP) ─────────────────────────
+	/** Send a WhatsApp event card. */
+	const sendEvent = (
+		jid: string,
+		event: {
+			name: string
+			description?: string
+			start: Date | number
+			end?: Date | number
+			location?: string
+			call?: 'audio' | 'video'
+			extraGuestsAllowed?: boolean
+		},
+		options: MiscMessageGenerationOptions = {}
+	) => {
+		const toDate = (d: Date | number) => (d instanceof Date ? d : new Date(d))
+		return messagesSock.sendMessage(
+			jid,
+			{
+				event: {
+					name: event.name,
+					description: event.description,
+					startDate: toDate(event.start),
+					endDate: event.end ? toDate(event.end) : undefined,
+					location: event.location ? { name: event.location } : undefined,
+					call: event.call,
+					extraGuestsAllowed: event.extraGuestsAllowed
+				}
+			},
+			options
+		)
+	}
+
+	/**
+	 * Collect RSVPs for an event you sent, for `timeout` ms.
+	 * Resolves with { going: [jid], notGoing: [jid], maybe: [jid], byVoter: { jid: 'going' | 'not_going' | 'maybe' } }.
+	 */
+	const collectRsvps = (eventMsg: WAMessage, options: { timeout?: number } = {}) =>
+		new Promise<{ going: string[]; notGoing: string[]; maybe: string[]; byVoter: Record<string, 'going' | 'not_going' | 'maybe'> }>(
+			resolve => {
+				sock.secretStore.remember(eventMsg)
+				const T = proto.Message.EventResponseMessage.EventResponseType
+				const byVoter: Record<string, 'going' | 'not_going' | 'maybe'> = {}
+				const finish = () => {
+					clearTimeout(timer)
+					ev.off('messages.update', handler)
+					const pick = (k: string) => Object.keys(byVoter).filter(v => byVoter[v] === k)
+					resolve({ going: pick('going'), notGoing: pick('not_going'), maybe: pick('maybe'), byVoter })
+				}
+
+				const handler = (updates: BaileysEventMap['messages.update']) => {
+					for (const u of updates) {
+						if (u.key.id !== eventMsg.key.id) continue
+						for (const r of u.update.eventResponses || []) {
+							const who = r.eventResponseMessageKey?.participant || r.eventResponseMessageKey?.remoteJid || ''
+							const kind = r.eventResponseMessage?.response
+							byVoter[who] = kind === T.GOING ? 'going' : kind === T.NOT_GOING ? 'not_going' : 'maybe'
+						}
+					}
+				}
+
+				const timer = setTimeout(finish, options.timeout ?? 60_000)
+				ev.on('messages.update', handler)
+			}
+		)
+
 	return {
 		...messagesSock,
+		requestAppStateKey,
+		ensureAppStateKey,
+		deleteForMe,
+		diagnose,
+		makeSticker,
+		sendSticker,
+		sendVoiceNote,
+		openViewOnce,
+		hasFfmpeg,
+		sendEvent,
+		collectRsvps,
 		sendGroupStatus,
 		sendStatus,
 		sendAlbum,

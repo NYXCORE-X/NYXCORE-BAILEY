@@ -1172,6 +1172,7 @@ export const makeSocket = (config: SocketConfig) => {
 		registerSocketEndHandler,
 		onUnexpectedError,
 		uploadPreKeys,
+		getAvailablePreKeysOnServer,
 		uploadPreKeysToServerIfRequired,
 		digestKeyBundle,
 		rotateSignedPreKey,

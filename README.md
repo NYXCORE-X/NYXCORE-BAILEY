@@ -31,6 +31,32 @@ Use at your own discretion. Do not spam people with this. We discourage any stal
 > [!IMPORTANT]
 > This is a NYXCORE-maintained fork, not the official upstream repository. Upstream development continues at [WhiskeySockets/Baileys](https://github.com/WhiskeySockets/Baileys).
 
+## NYXCORE additions (v1.0.9)
+
+```js
+const sock = makeWASocket({
+  auth: state,
+  secretStore: { path: './session/message-secrets.jsonl' }, // edits/votes/RSVPs keep decrypting after restarts
+})
+
+sock.ev.on('messages.edit', edits => {})   // { key, editor, text, message, timestamp } - also edits from the real WhatsApp app
+sock.ev.on('poll.vote', votes => {})       // { pollKey, voter, voterIds, options (names), hashes, timestamp }
+
+await sock.deleteForMe(msg.key)            // repairs/asks the phone for the app-state key if needed
+await sock.ensureAppStateKey({ force: true }); await sock.requestAppStateKey()
+await sock.diagnose()                      // connection, app-state key, pre-keys, sync, secret store, queues, problems[]
+
+await sock.waitForReply(jid, from, { includeSelf: true })   // also waitForMessage / waitForButton / waitForReaction
+
+await sock.sendSticker(jid, './a.png', { pack: 'My Pack', author: 'Me', emojis: ['🔥'], fit: 'crop' })
+const webp = await sock.makeSticker(buffer, { animated: true })   // gifs/videos need ffmpeg; images use sharp if installed, else ffmpeg
+await sock.sendVoiceNote(jid, './song.mp3')                       // needs ffmpeg
+const { type, buffer: media } = await sock.openViewOnce(msg)
+
+const ev = await sock.sendEvent(jid, { name: 'Game night', start: new Date(Date.now() + 864e5), location: 'My place' })
+const rsvps = await sock.collectRsvps(ev, { timeout: 60_000 })    // { going, notGoing, maybe, byVoter }
+```
+
 ## Example
 
 Do check out & run [example.ts](Example/example.ts) to see an example usage of the library.
