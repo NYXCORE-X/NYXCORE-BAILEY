@@ -2,7 +2,7 @@
   "name": "@nyxcore/nyxcorebailey",
   "type": "module",
   "version": "1.0.9",
-  "description": "NYXCORE-maintained fork of Baileys, a TypeScript/JavaScript WebSocket library for WhatsApp Web",
+  "description": "NYXCORE Baileys: a WhatsApp Web library for bots, with built-in edit/poll-vote decryption, games helpers, group status, albums, sticker packs, events and diagnostics",
   "keywords": [
     "whatsapp",
     "automation"
