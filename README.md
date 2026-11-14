@@ -1,61 +1,152 @@
+<div align="center">
+
 # NYXCORE Baileys
 
-NYXCORE Baileys is an independently maintained, MIT-licensed fork of [WhiskeySockets/Baileys](https://github.com/WhiskeySockets/Baileys), a WebSocket-based TypeScript library for interacting with WhatsApp Web. It keeps the upstream API while publishing separately as `@nyxcore/nyxcorebailey`.
+**A WhatsApp Web library for Node.js, built for bots that need to do more.**
 
-This project is not affiliated with or endorsed by WhatsApp. Upstream copyright and MIT license notices are preserved in [LICENSE](LICENSE).
+`@nyxcore/nyxcorebailey` · TypeScript · WebSocket (no browser) · MIT
 
-> [!CAUTION]
-> NOTICE OF BREAKING CHANGE.
->
-> As of 7.0.0, multiple breaking changes were introduced into the library.
->
-> Please check out https://whiskey.so/migrate-latest for more information.
+</div>
 
-# Important Note
-This fork keeps the upstream Baileys API and protocol implementation, but its package releases and versioning are maintained separately by NYXCORE. The upstream migration guide and API docs are still useful for this shared API.
+NYXCORE Baileys is a WhatsApp Web (multi-device) library with its own release line, its own features and its own maintainer. It builds on the open-source Baileys protocol work (credit and the original MIT notice are kept in [LICENSE](LICENSE)), and adds the things bot builders keep rewriting by hand: games and animation helpers, real edit / poll-vote decryption, button routing that works for other people, group status, albums, sticker packs, events, and self-diagnosis.
 
-# Disclaimer
-This project is not affiliated, associated, authorized, endorsed by, or in any way officially connected with WhatsApp or any of its subsidiaries or its affiliates.
-The official WhatsApp website can be found at whatsapp.com. "WhatsApp" as well as related names, marks, emblems and images are registered trademarks of their respective owners.
+It is not affiliated with or endorsed by WhatsApp. Use it responsibly: no spam, no stalkerware, no bulk unsolicited messaging.
 
-The maintainers of Baileys do not in any way condone the use of this application in practices that violate the Terms of Service of WhatsApp. The maintainers of this application call upon the personal responsibility of its users to use this application in a fair way, as it is intended to be used.
-Use at your own discretion. Do not spam people with this. We discourage any stalkerware, bulk or automated messaging usage.
+> [!NOTE]
+> Everything in the standard Baileys 7 API (`makeWASocket`, `sock.ev`, `sendMessage`, auth state, groups, newsletters…) works the same here, and the sections further down still document it. This page covers what NYXCORE adds.
 
-##
+## What you get
 
-- Baileys does not require Selenium or any other browser to be interface with WhatsApp Web, it does so directly using a **WebSocket**.
-- Not running Selenium or Chromium saves you like **half a gig** of ram :/
-- Baileys supports interacting with the multi-device & web versions of WhatsApp.
-- Thank you to [@pokearaujo](https://github.com/pokearaujo/multidevice) for writing his observations on the workings of WhatsApp Multi-Device. Also, thank you to [@Sigalor](https://github.com/sigalor/whatsapp-web-reveng) for writing his observations on the workings of WhatsApp Web and thanks to [@Rhymen](https://github.com/Rhymen/go-whatsapp/) for the __go__ implementation.
+| Area | What's new |
+|---|---|
+| **Decryption** | Edits from the normal WhatsApp app and poll votes are decrypted for you and emitted as `messages.edit` / `poll.vote`. A persistent secret store keeps this working across restarts. Phone and LID ids are both tried. |
+| **Sending** | Group status, normal status, albums, sticker packs, events, queued / bulk sending with safe gaps. |
+| **Buttons** | Native-flow buttons get the routing node automatically, so they show up for **everyone**, not just you. |
+| **Bots & games** | `waitForMessage / Reply / Button / Reaction`, polls as quizzes, `animate`, `typewriter`, `countdown`. |
+| **Reliability** | App-state key check + repair, `deleteForMe`, `diagnose()`. |
+| **Media** | Sticker maker with pack name/author, voice-note converter, view-once opener. |
 
-> [!IMPORTANT]
-> This is a NYXCORE-maintained fork, not the official upstream repository. Upstream development continues at [WhiskeySockets/Baileys](https://github.com/WhiskeySockets/Baileys).
+## Install
 
-## NYXCORE additions (v1.0.9)
+```bash
+npm install @nyxcore/nyxcorebailey
+```
 
 ```js
+const { default: makeWASocket, useMultiFileAuthState } = require('@nyxcore/nyxcorebailey')
+
+const { state, saveCreds } = await useMultiFileAuthState('./session')
 const sock = makeWASocket({
   auth: state,
-  secretStore: { path: './session/message-secrets.jsonl' }, // edits/votes/RSVPs keep decrypting after restarts
+  secretStore: { path: './session/message-secrets.jsonl' }, // recommended
+})
+sock.ev.on('creds.update', saveCreds)
+```
+
+Node 20+. `ffmpeg` is optional (voice notes, animated stickers); `sharp` is optional (faster static stickers).
+
+## Decryption and events
+
+```js
+sock.ev.on('messages.edit', edits => {
+  for (const e of edits) console.log(e.editor, 'changed', e.key.id, 'to', e.text)
 })
 
-sock.ev.on('messages.edit', edits => {})   // { key, editor, text, message, timestamp } - also edits from the real WhatsApp app
-sock.ev.on('poll.vote', votes => {})       // { pollKey, voter, voterIds, options (names), hashes, timestamp }
-
-await sock.deleteForMe(msg.key)            // repairs/asks the phone for the app-state key if needed
-await sock.ensureAppStateKey({ force: true }); await sock.requestAppStateKey()
-await sock.diagnose()                      // connection, app-state key, pre-keys, sync, secret store, queues, problems[]
-
-await sock.waitForReply(jid, from, { includeSelf: true })   // also waitForMessage / waitForButton / waitForReaction
-
-await sock.sendSticker(jid, './a.png', { pack: 'My Pack', author: 'Me', emojis: ['🔥'], fit: 'crop' })
-const webp = await sock.makeSticker(buffer, { animated: true })   // gifs/videos need ffmpeg; images use sharp if installed, else ffmpeg
-await sock.sendVoiceNote(jid, './song.mp3')                       // needs ffmpeg
-const { type, buffer: media } = await sock.openViewOnce(msg)
-
-const ev = await sock.sendEvent(jid, { name: 'Game night', start: new Date(Date.now() + 864e5), location: 'My place' })
-const rsvps = await sock.collectRsvps(ev, { timeout: 60_000 })    // { going, notGoing, maybe, byVoter }
+sock.ev.on('poll.vote', votes => {
+  for (const v of votes) console.log(v.voter, 'voted', v.options) // option names, [] = vote removed
+})
 ```
+
+- `messages.edit`: `{ key, editor, text, message, timestamp }`. `key` is the original message. Works for edits made in the real WhatsApp app, including messages typed on the bot account's own phone.
+- `poll.vote`: `{ pollKey, voter, voterIds, options, hashes, timestamp, voteKey }`.
+- `secretStore: { path, max }` saves each message's secret (and poll options) to a JSONL file. Without `path` it is memory-only. Default cap is 20,000 messages.
+- `sock.secretStore` exposes `get / getSecret / remember / size`.
+
+## Sending
+
+```js
+// Group status (the status shown in a group's header) and normal status
+await sock.sendGroupStatus(groupJid, { image: buf, caption: 'Hi' })
+await sock.sendStatus({ text: 'Hello' }, { statusJidList: [jid1, jid2] })
+
+// Album (one swipeable bubble, 2+ items)
+await sock.sendAlbum(jid, [{ image: a, caption: '1' }, { image: b }, { video: c }])
+
+// Sticker pack
+await sock.sendMessage(jid, { stickerPack: { name: 'Pack', publisher: 'Me', cover, stickers: [{ image: s1, emojis: ['😀'] }] } })
+
+// Events and RSVPs
+const ev = await sock.sendEvent(jid, { name: 'Game night', start: new Date(Date.now() + 864e5), location: 'My place', extraGuestsAllowed: true })
+const { going, notGoing, maybe, byVoter } = await sock.collectRsvps(ev, { timeout: 60_000 })
+
+// Gentle sending (per-chat queue with random gaps / one chat at a time)
+await sock.sendQueued(jid, { text: 'one' }, { minGap: 900, jitter: 500 })
+await sock.sendBulk([jid1, jid2], { text: 'Announcement' }, { delay: 2500 })
+```
+
+**Buttons:** native-flow / interactive messages get the `<biz>` routing node added automatically, so recipients see the buttons too.
+
+## Games and live messages
+
+```js
+// wait for people
+const msg   = await sock.waitForMessage(jid, { from: userJid, timeout: 30_000, filter: m => true })
+const reply = await sock.waitForReply(jid, userJid, { timeout: 30_000 })      // { text, message } | null
+const tap   = await sock.waitForButton(jid, userJid, { timeout: 30_000 })      // { id, message } | null
+const react = await sock.waitForReaction(sentMsg.key, { emoji: '🔫', timeout: 10_000 }) // { emoji, from } | null
+// all of them accept includeSelf: true to also react to the bot's own account
+
+// polls as quizzes
+const poll  = await sock.sendQuiz(jid, 'Capital of Nigeria?', ['Lagos', 'Abuja', 'Kano'])
+const { voters, byVoter } = await sock.collectVotes(poll, { timeout: 20_000 })
+
+// live-edit effects
+await sock.animate(jid, ['⏳', '⌛', '✅'], { interval: 800 })
+await sock.typewriter(jid, 'Typing this out…')
+await sock.countdown(jid, 5, { label: 'Starts in', doneText: 'Go!' })
+```
+
+Edits are spaced out (700 ms minimum) so WhatsApp doesn't rate-limit them.
+
+## Reliability
+
+```js
+await sock.diagnose()
+// { connected, user, lid, syncState, appStateKey:{id,present}, preKeysOnServer,
+//   secretStore:{size,persistent,path}, queues, problems:[], healthy }
+
+await sock.deleteForMe(msg.key)                 // delete only for you; fixes the key first if needed
+await sock.ensureAppStateKey({ force: true })   // check the key, ask your phone for it if missing
+await sock.requestAppStateKey()
+```
+
+The app-state key is checked automatically ~25 s after connecting (`autoRepairAppStateKey: false` turns that off). If the phone never answers, re-linking the device is the fix.
+
+## Media helpers
+
+```js
+await sock.sendSticker(jid, './pic.png', { pack: 'My Pack', author: 'Me', emojis: ['🔥'], fit: 'crop' })
+const webp = await sock.makeSticker(buffer, { animated: true, quality: 80 }) // video/gif needs ffmpeg
+await sock.sendVoiceNote(jid, './song.mp3')                                  // ffmpeg → ogg/opus voice note
+const { type, buffer: media, caption, mimetype } = await sock.openViewOnce(receivedMsg)
+```
+
+Inputs can be a `Buffer`, a file path, or an `http(s)` URL.
+
+## Options added to `makeWASocket`
+
+| Option | Default | What it does |
+|---|---|---|
+| `secretStore` | memory only | `{ path?, max? }` persist message secrets |
+| `autoRepairAppStateKey` | `true` | check / request the app-state key after connecting |
+
+## Credits
+
+Built on the protocol research and code of the Baileys project ([WhiskeySockets/Baileys](https://github.com/WhiskeySockets/Baileys)), MIT licensed, with thanks to [@pokearaujo](https://github.com/pokearaujo/multidevice), [@Sigalor](https://github.com/sigalor/whatsapp-web-reveng) and [@Rhymen](https://github.com/Rhymen/go-whatsapp/). The reference documentation below is the standard Baileys API that NYXCORE Baileys keeps.
+
+---
+
+# API reference (standard Baileys)
 
 ## Example
 
@@ -75,7 +166,7 @@ npm install @nyxcore/nyxcorebailey
 
 To install the current GitHub branch instead of the published package:
 ```
-npm install github:NYXCORE-X/NYXCORE-BAILEYS
+npm install github:NYXCORE-X/NYXCORE-BAILEY
 ```
 
 Then import your code using:
@@ -83,7 +174,7 @@ Then import your code using:
 import makeWASocket from '@nyxcore/nyxcorebailey'
 ```
 
-The npm command becomes available after the first public release. Maintainers must configure npm Trusted Publishing for `NYXCORE-X/NYXCORE-BAILEYS` and the `publish-release.yml` workflow before creating a release tag.
+The npm command becomes available after the first public release. Maintainers must configure npm Trusted Publishing for `NYXCORE-X/NYXCORE-BAILEY` and the `publish-release.yml` workflow before creating a release tag.
 
 # Links
 
@@ -615,7 +706,7 @@ await sock.sendMessage(
 await sock.sendMessage(
     jid,
     {
-        text: 'Hi, this was sent using https://github.com/NYXCORE-X/NYXCORE-BAILEYS'
+        text: 'Hi, this was sent using https://github.com/NYXCORE-X/NYXCORE-BAILEY'
     }
 )
 ```
