@@ -1457,3 +1457,20 @@ await sock.sendBulk([jid1, jid2], { text: 'announcement' }, { delay: 3000 })
 ```
 
 Edits made by people on the normal WhatsApp app (which arrive encrypted) are decrypted when `getMessage` can return the original message, and are emitted as a normal `messages.update` with `editedMessage`.
+
+
+## New in 1.1.0
+
+```js
+// pairing code that waits and retries
+const { code, formatted } = await sock.safePairingCode('2348133504568')
+
+// auto reconnect
+import { makeResilientSocket } from '@nyxcore/nyxcorebailey'
+const bot = makeResilientSocket(config, { onSocket: (sock) => { /* attach your handlers */ } })
+
+// channels and status
+await sock.followChannel('https://whatsapp.com/channel/XXXX')
+await sock.postTextStatus('Hello', ['2348133504568@s.whatsapp.net'])
+await sock.reactToStatus(msg.key, '🔥')
+```

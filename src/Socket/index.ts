@@ -1,6 +1,7 @@
 import { DEFAULT_CONNECTION_CONFIG } from '../Defaults'
 import type { UserFacingSocketConfig } from '../Types'
 import { makeCommunitiesSocket } from './communities'
+import { makeNyxHelpers } from './nyx-helpers'
 
 // export the last socket layer
 const makeWASocket = (config: UserFacingSocketConfig) => {
@@ -9,7 +10,8 @@ const makeWASocket = (config: UserFacingSocketConfig) => {
 		...config
 	}
 
-	return makeCommunitiesSocket(newConfig)
+	const sock = makeCommunitiesSocket(newConfig)
+	return Object.assign(sock, makeNyxHelpers(sock))
 }
 
 export default makeWASocket
