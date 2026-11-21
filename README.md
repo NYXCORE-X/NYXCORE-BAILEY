@@ -1474,3 +1474,16 @@ await sock.followChannel('https://whatsapp.com/channel/XXXX')
 await sock.postTextStatus('Hello', ['2348133504568@s.whatsapp.net'])
 await sock.reactToStatus(msg.key, '🔥')
 ```
+
+
+## New in 1.2.0
+
+```js
+// send an HTML page as a file, with an animated preview before it
+await sock.sendHtmlWithPreview(jid, htmlString, mp4Buffer, {
+  fileName: 'NEXUS-ESP.html',
+  previewCaption: 'Live preview',
+  fileCaption: 'Open this file in your browser',
+  quoted: msg
+})
+```

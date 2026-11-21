@@ -1,7 +1,7 @@
 {
   "name": "@nyxcore/nyxcorebailey",
   "type": "module",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "NYXCORE Baileys: a WhatsApp Web library for bots, with built-in edit/poll-vote decryption, games helpers, group status, albums, sticker packs, events and diagnostics",
   "keywords": [
     "whatsapp",
