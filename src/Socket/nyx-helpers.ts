@@ -238,7 +238,10 @@ export const makeNyxHelpers = (sock: AnySock) => {
 	 *    (WhatsApp flips an account to online whenever it receives a message, so offline mode re-asserts it right after).
 	 * Returns { stop, set } : stop() ends it, set(mode) switches mode without restarting.
 	 */
-	const keepPresence = (mode: 'online' | 'offline' = 'online', opts: { intervalMs?: number; settleMs?: number } = {}) => {
+	const keepPresence = (
+		mode: 'online' | 'offline' = 'online',
+		opts: { intervalMs?: number; settleMs?: number } = {}
+	) => {
 		const intervalMs = Math.max(5000, opts.intervalMs ?? 25_000)
 		const settleMs = Math.max(0, opts.settleMs ?? 1500)
 		let current = mode
@@ -246,7 +249,9 @@ export const makeNyxHelpers = (sock: AnySock) => {
 		let settle: ReturnType<typeof setTimeout> | undefined
 		const apply = () => {
 			if (stopped) return
-			Promise.resolve(sock.sendPresenceUpdate(current === 'online' ? 'available' : 'unavailable')).catch(() => undefined)
+			Promise.resolve(sock.sendPresenceUpdate(current === 'online' ? 'available' : 'unavailable')).catch(
+				() => undefined
+			)
 		}
 
 		const timer = setInterval(apply, intervalMs)
