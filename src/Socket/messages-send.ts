@@ -1585,7 +1585,8 @@ export const makeMessagesSocket = (config: SocketConfig) => {
 		}
 
 		const interval = Math.max(700, options.interval ?? 1200)
-		const { interval: _ignored, ...sendOptions } = options
+		const sendOptions = { ...options }
+		delete (sendOptions as { interval?: number }).interval
 		const first = (await messagesSock.sendMessage(jid, { text: frames[0]! }, sendOptions))!
 		for (let i = 1; i < frames.length; i++) {
 			await sleep(interval)
@@ -1632,7 +1633,9 @@ export const makeMessagesSocket = (config: SocketConfig) => {
 		}
 
 		frames.push(options.doneText ?? '🚀 *GO!*')
-		const { label: _l, doneText: _d, ...rest } = options
+		const rest = { ...options }
+		delete (rest as { label?: string }).label
+		delete (rest as { doneText?: string }).doneText
 		return animate(jid, frames, { ...rest, interval: 1000 })
 	}
 

@@ -1,3 +1,4 @@
+/* eslint-disable max-depth */
 import { Boom } from '@hapi/boom'
 import { proto } from '../../WAProto/index.js'
 import type {

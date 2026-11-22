@@ -82,7 +82,7 @@ export const makeResilientSocket = (config: Parameters<typeof makeWASocket>[0], 
 		stop() {
 			stopped = true
 			try {
-				current?.end(undefined)
+				void current?.end(undefined)
 			} catch {}
 		}
 	}

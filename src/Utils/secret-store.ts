@@ -1,3 +1,4 @@
+/* eslint-disable max-depth */
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
 import { dirname } from 'path'
 import type { proto } from '../../WAProto/index.js'
