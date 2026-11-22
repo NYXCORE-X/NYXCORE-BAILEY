@@ -1511,3 +1511,12 @@ const { state, saveCreds } = await useNyxAuthState('./session')   // use instead
 const backup = await exportSessionBackup('./session', 'my-password') // Buffer: save it anywhere
 await importSessionBackup(backup, './session', 'my-password')        // restore it later
 ```
+
+### Always online / always offline
+
+```js
+const nyx = makeNyxHelpers(sock)
+const presence = nyx.keepPresence('offline')   // or 'online'
+presence.set('online')                         // switch any time
+presence.stop()                                // stop keeping it
+```
