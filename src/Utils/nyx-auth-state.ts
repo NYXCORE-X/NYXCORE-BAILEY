@@ -219,6 +219,7 @@ export async function importSessionBackup(backup: Buffer, folder: string, passwo
 	if (data?.v !== 1 || typeof data.files !== 'object' || !data.files['creds.json']) {
 		throw new Error('Backup is incomplete.')
 	}
+
 	await mkdir(folder, { recursive: true })
 	let n = 0
 	for (const [name, b64] of Object.entries<string>(data.files)) {
