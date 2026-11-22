@@ -1,9 +1,5 @@
-# 1.4.1 (NYXCORE)
-
-- feat: `keepPresence('online' | 'offline', { intervalMs, settleMs })` in the helpers: keeps the account showing online (always online) or offline (always offline, re-applied right after every incoming message). Returns `{ set(mode), stop(), mode }`.
-
 # 1.4.0 (NYXCORE)
-
+- feat: `keepPresence('online' | 'offline', { intervalMs, settleMs })` in the helpers: keeps the account showing online (always online) or offline (always offline, re-applied right after every incoming message). Returns `{ set(mode), stop(), mode }`.
 - feat: `useNyxAuthState(folder)`: drop-in for useMultiFileAuthState with atomic writes, damaged files quarantined (`*.corrupt`) instead of lost, and automatic recovery of creds.json from `creds.json.bak`. Stops the "failed to decrypt / Bad MAC" storms that follow a crash or restart in the middle of a write.
 - feat: `exportSessionBackup(folder, password?)` and `importSessionBackup(buffer, folder, password?)`: one-file session backup (gzip, AES-256-GCM when a password is given) and restore
 
