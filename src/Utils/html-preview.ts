@@ -57,7 +57,9 @@ async function loadBrowserLib(): Promise<{ name: string; lib: any } | null> {
 async function resolveFfmpeg(custom?: string): Promise<string> {
 	if (custom) return custom
 	try {
-		const mod: any = await import('ffmpeg-static')
+		// optional package, so it is imported by a variable name: the build must not require its types
+		const pkg = 'ffmpeg-static'
+		const mod: any = await import(pkg)
 		const p = mod?.default ?? mod
 		if (typeof p === 'string' && p) return p
 	} catch {
