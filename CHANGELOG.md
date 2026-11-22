@@ -1,3 +1,10 @@
+# 1.3.1 (NYXCORE)
+
+- feat: sharper, smoother HTML previews: recorded at 2x pixel density, 20 fps, 720px wide output
+- feat: uses the browser's screencast (a frame every real change, exact timing), with the old screenshot loop as fallback
+- feat: new options `quality` ('low' | 'medium' | 'high'), `scale` (1-3) and `outputWidth`
+- feat: phone-sized default viewport (390x844); better encoding (lanczos scaling, CRF 21, medium preset)
+
 # 1.3.0 (NYXCORE)
 
 - feat: `renderHtmlPreview(html, opts)` records an HTML page in a headless browser and returns an mp4 (needs playwright/puppeteer + ffmpeg, all optional)
