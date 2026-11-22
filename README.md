@@ -1499,3 +1499,15 @@ console.log(res.previewed, res.reason)
 
 Needs (optional): `npm i playwright-core ffmpeg-static` and a Chromium (`npx playwright-core install chromium`).
 Not available on Termux. 3D pages record slowly without a GPU.
+
+
+## Session safety and backup (NYXCORE)
+
+```js
+const { useNyxAuthState, exportSessionBackup, importSessionBackup } = require('@nyxcore/nyxcorebailey')
+
+const { state, saveCreds } = await useNyxAuthState('./session')   // use instead of useMultiFileAuthState
+
+const backup = await exportSessionBackup('./session', 'my-password') // Buffer: save it anywhere
+await importSessionBackup(backup, './session', 'my-password')        // restore it later
+```

@@ -1,3 +1,8 @@
+# 1.4.0 (NYXCORE)
+
+- feat: `useNyxAuthState(folder)`: drop-in for useMultiFileAuthState with atomic writes, damaged files quarantined (`*.corrupt`) instead of lost, and automatic recovery of creds.json from `creds.json.bak`. Stops the "failed to decrypt / Bad MAC" storms that follow a crash or restart in the middle of a write.
+- feat: `exportSessionBackup(folder, password?)` and `importSessionBackup(buffer, folder, password?)`: one-file session backup (gzip, AES-256-GCM when a password is given) and restore
+
 # 1.3.1 (NYXCORE)
 
 - feat: sharper, smoother HTML previews: recorded at 2x pixel density, 20 fps, 720px wide output
