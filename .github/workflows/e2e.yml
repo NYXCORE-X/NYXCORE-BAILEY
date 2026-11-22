@@ -1,10 +1,9 @@
 name: E2E Tests
 
+# Needs the upstream private mock-server image (ghcr.io/whiskeysockets-devtools/bartender) and its
+# BARTENDER_GHCR_TOKEN secret, which only the upstream org has. Run it by hand when you have both.
 on:
-  push:
-    branches:
-      - master
-      - develop
+  workflow_dispatch:
 
 permissions:
   contents: read
