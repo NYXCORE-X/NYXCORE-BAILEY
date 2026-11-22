@@ -11,8 +11,8 @@
  *  - `exportSessionBackup`  the whole session folder as one (optionally password-encrypted) Buffer.
  *  - `importSessionBackup`  put such a backup back into a folder (restores a lost or broken session).
  */
-import { createCipheriv, createDecipheriv, randomBytes, scrypt } from 'crypto'
 import { Mutex } from 'async-mutex'
+import { createCipheriv, createDecipheriv, randomBytes, scrypt } from 'crypto'
 import { copyFile, mkdir, readdir, readFile, rename, stat, unlink, writeFile } from 'fs/promises'
 import { join } from 'path'
 import { gunzipSync, gzipSync } from 'zlib'
@@ -21,7 +21,7 @@ import type { AuthenticationCreds, AuthenticationState, SignalDataTypeMap } from
 import { initAuthCreds } from './auth-utils'
 import { BufferJSON } from './generics'
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
+/* eslint-disable @typescript-eslint/no-explicit-any, max-depth */
 
 const locks = new Map<string, Mutex>()
 const lockFor = (p: string) => {
@@ -216,7 +216,9 @@ export async function importSessionBackup(backup: Buffer, folder: string, passwo
 	}
 
 	const data = JSON.parse(gunzipSync(packed).toString('utf-8'))
-	if (data?.v !== 1 || typeof data.files !== 'object' || !data.files['creds.json']) throw new Error('Backup is incomplete.')
+	if (data?.v !== 1 || typeof data.files !== 'object' || !data.files['creds.json']) {
+		throw new Error('Backup is incomplete.')
+	}
 	await mkdir(folder, { recursive: true })
 	let n = 0
 	for (const [name, b64] of Object.entries<string>(data.files)) {
