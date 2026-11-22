@@ -1487,3 +1487,15 @@ await sock.sendHtmlWithPreview(jid, htmlString, mp4Buffer, {
   quoted: msg
 })
 ```
+
+
+## New in 1.3.0: animated page previews
+
+```js
+// preview video + file in one call (falls back to the file alone without a browser)
+const res = await sock.sendHtmlPage(jid, htmlString, { fileName: 'page.html', quoted: msg })
+console.log(res.previewed, res.reason)
+```
+
+Needs (optional): `npm i playwright-core ffmpeg-static` and a Chromium (`npx playwright-core install chromium`).
+Not available on Termux. 3D pages record slowly without a GPU.

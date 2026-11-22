@@ -1,3 +1,11 @@
+# 1.3.0 (NYXCORE)
+
+- feat: `renderHtmlPreview(html, opts)` records an HTML page in a headless browser and returns an mp4 (needs playwright/puppeteer + ffmpeg, all optional)
+- feat: `canRenderHtmlPreview()` checks the machine first
+- feat: `sock.sendHtmlPage(jid, html, opts)` sends an animated preview + the file, or just the file when no browser exists
+- security: the recorded page cannot reach localhost or private network addresses
+- 3D (WebGL) pages are detected and recorded in software mode (smaller, slower)
+
 # 1.2.0 (NYXCORE)
 
 - feat: `sock.sendHtmlFile(jid, html, fileName, { caption, quoted })` sends an HTML page as a proper file

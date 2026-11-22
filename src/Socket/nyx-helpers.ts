@@ -9,6 +9,8 @@
  * cannot change the behaviour of the core protocol code.
  */
 
+import { canRenderHtmlPreview, renderHtmlPreview, type HtmlPreviewOptions } from '../Utils/html-preview'
+
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type AnySock = any
 
@@ -178,6 +180,34 @@ export const makeNyxHelpers = (sock: AnySock) => {
 		return sendHtmlFile(jid, html, opts.fileName ?? 'page.html', { caption: opts.fileCaption, quoted: opts.quoted })
 	}
 
+	/**
+	 * Send an HTML page the best way possible:
+	 *  - if a headless browser + ffmpeg exist, an animated preview first, then the file
+	 *  - otherwise just the file
+	 * Returns { previewed: boolean, reason?: string }.
+	 */
+	const sendHtmlPage = async (
+		jid: string,
+		html: string | Buffer,
+		opts: { fileName?: string; previewCaption?: string; fileCaption?: string; quoted?: unknown; preview?: HtmlPreviewOptions | false } = {}
+	) => {
+		const source = Buffer.isBuffer(html) ? html.toString('utf8') : String(html)
+		let video: Buffer | undefined
+		let reason: string | undefined
+		if (opts.preview !== false) {
+			try {
+				if (await canRenderHtmlPreview(opts.preview || {})) video = await renderHtmlPreview(source, opts.preview || {})
+				else reason = 'no browser/ffmpeg on this machine'
+			} catch (err) {
+				reason = err instanceof Error ? err.message : String(err)
+			}
+		}
+
+		if (video) await sendAnimatedPreview(jid, video, { caption: opts.previewCaption, quoted: opts.quoted })
+		await sendHtmlFile(jid, source, opts.fileName ?? 'page.html', { caption: opts.fileCaption, quoted: opts.quoted })
+		return { previewed: !!video, reason }
+	}
+
 	return {
 		safePairingCode,
 		followChannel,
@@ -189,7 +219,10 @@ export const makeNyxHelpers = (sock: AnySock) => {
 		reactToStatus,
 		sendHtmlFile,
 		sendAnimatedPreview,
-		sendHtmlWithPreview
+		sendHtmlWithPreview,
+		sendHtmlPage,
+		renderHtmlPreview,
+		canRenderHtmlPreview
 	}
 }
 
