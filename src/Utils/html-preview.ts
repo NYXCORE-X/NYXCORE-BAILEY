@@ -103,11 +103,27 @@ export function isBlockedUrl(raw: string): boolean {
 	if (u.protocol === 'data:' || u.protocol === 'blob:' || u.protocol === 'about:') return false
 	if (u.protocol !== 'http:' && u.protocol !== 'https:') return true
 	const h = u.hostname.toLowerCase()
-	if (h === 'localhost' || h.endsWith('.local') || h.endsWith('.internal') || h === '0.0.0.0' || h === '[::1]' || h === '::1') return true
+	if (
+		h === 'localhost' ||
+		h.endsWith('.local') ||
+		h.endsWith('.internal') ||
+		h === '0.0.0.0' ||
+		h === '[::1]' ||
+		h === '::1'
+	)
+		return true
 	const m = h.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/)
 	if (m) {
 		const [a, b] = [Number(m[1]), Number(m[2])]
-		if (a === 10 || a === 127 || a === 0 || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168)) return true
+		if (
+			a === 10 ||
+			a === 127 ||
+			a === 0 ||
+			(a === 169 && b === 254) ||
+			(a === 172 && b >= 16 && b <= 31) ||
+			(a === 192 && b === 168)
+		)
+			return true
 	}
 
 	return false
@@ -121,16 +137,21 @@ const clamp = (n: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, n
  */
 export async function renderHtmlPreview(html: string, opts: HtmlPreviewOptions = {}): Promise<Buffer> {
 	const found = await loadBrowserLib()
-	if (!found) throw new Error('No browser library found. Install one: npm i playwright-core (and a Chromium) or puppeteer.')
+	if (!found)
+		throw new Error('No browser library found. Install one: npm i playwright-core (and a Chromium) or puppeteer.')
 	const seconds = clamp(opts.seconds ?? 6, 1, 20)
 	const fps = clamp(opts.fps ?? 20, 2, 30)
-	const needsGl = opts.webgl ?? /webgl|WebGLRenderer|three(\.module)?\.(min\.)?js|three@|getContext\(\s*['"](experimental-)?webgl/i.test(html)
+	const needsGl =
+		opts.webgl ??
+		/webgl|WebGLRenderer|three(\.module)?\.(min\.)?js|three@|getContext\(\s*['"](experimental-)?webgl/i.test(html)
 	// software WebGL is slow, so 3D pages are recorded smaller
 	const width = clamp(opts.width ?? (needsGl ? 360 : 390), 240, 1280)
 	const height = clamp(opts.height ?? (needsGl ? 640 : 844), 240, 1920)
 	const waitMs = clamp(opts.waitMs ?? 1500, 0, 10_000)
 	const timeoutMs = clamp(opts.timeoutMs ?? 60_000, 10_000, 180_000)
-	const q = { low: { jpeg: 60, crf: 30 }, medium: { jpeg: 78, crf: 25 }, high: { jpeg: 90, crf: 21 } }[opts.quality ?? 'high']
+	const q = { low: { jpeg: 60, crf: 30 }, medium: { jpeg: 78, crf: 25 }, high: { jpeg: 90, crf: 21 } }[
+		opts.quality ?? 'high'
+	]
 	const scale = clamp(opts.scale ?? (needsGl ? 1 : 2), 1, 3)
 	const outW = clamp(opts.outputWidth ?? 720, 240, 1280)
 	const ffmpeg = await resolveFfmpeg(opts.ffmpegPath)
@@ -141,10 +162,19 @@ export async function renderHtmlPreview(html: string, opts: HtmlPreviewOptions =
 	try {
 		const launchArgs = ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
 		// these flags make plain 2D pages ~50x slower, so only 3D pages get them
-		if (needsGl) launchArgs.push('--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist')
+		if (needsGl)
+			launchArgs.push(
+				'--use-gl=angle',
+				'--use-angle=swiftshader',
+				'--enable-unsafe-swiftshader',
+				'--ignore-gpu-blocklist'
+			)
 		if (isPw) {
 			const chromium = found.lib.chromium ?? found.lib.default.chromium
-			browser = await chromium.launch({ args: launchArgs, ...(opts.executablePath ? { executablePath: opts.executablePath } : {}) })
+			browser = await chromium.launch({
+				args: launchArgs,
+				...(opts.executablePath ? { executablePath: opts.executablePath } : {})
+			})
 		} else {
 			browser = await (found.lib.launch ?? found.lib.default.launch)({
 				headless: true,
@@ -153,7 +183,9 @@ export async function renderHtmlPreview(html: string, opts: HtmlPreviewOptions =
 			})
 		}
 
-		const page: any = isPw ? await browser.newPage({ viewport: { width, height }, deviceScaleFactor: scale }) : await browser.newPage()
+		const page: any = isPw
+			? await browser.newPage({ viewport: { width, height }, deviceScaleFactor: scale })
+			: await browser.newPage()
 		if (!isPw) await page.setViewport({ width, height, deviceScaleFactor: scale })
 		// block the page from reaching local / private network addresses
 		if (isPw) {
@@ -199,7 +231,18 @@ export async function renderHtmlPreview(html: string, opts: HtmlPreviewOptions =
 
 		const out = path.join(dir, 'out.mp4')
 		const vf = `fps=${fps},scale='min(${outW},iw)':-2:flags=lanczos,format=yuv420p`
-		const encode = ['-c:v', 'libx264', '-crf', String(q.crf), '-preset', 'medium', '-movflags', '+faststart', '-an', out]
+		const encode = [
+			'-c:v',
+			'libx264',
+			'-crf',
+			String(q.crf),
+			'-preset',
+			'medium',
+			'-movflags',
+			'+faststart',
+			'-an',
+			out
+		]
 		if (usedScreencast) {
 			// variable frame timing -> constant frame rate through the concat demuxer
 			const lines: string[] = []
@@ -212,7 +255,11 @@ export async function renderHtmlPreview(html: string, opts: HtmlPreviewOptions =
 			lines.push(`file '${frames[frames.length - 1]!.file.replace(/'/g, "'\\''")}'`)
 			const list = path.join(dir, 'list.txt')
 			await fs.writeFile(list, lines.join('\n'))
-			await run(ffmpeg, ['-y', '-loglevel', 'error', '-f', 'concat', '-safe', '0', '-i', list, '-vf', vf, '-r', String(fps), ...encode], Math.max(20_000, timeoutMs))
+			await run(
+				ffmpeg,
+				['-y', '-loglevel', 'error', '-f', 'concat', '-safe', '0', '-i', list, '-vf', vf, '-r', String(fps), ...encode],
+				Math.max(20_000, timeoutMs)
+			)
 		} else {
 			// fallback: screenshots; real speed = frames captured / real seconds
 			const frameGap = 1000 / fps
@@ -228,7 +275,22 @@ export async function renderHtmlPreview(html: string, opts: HtmlPreviewOptions =
 
 			if (n < 2) throw new Error('The page could not be recorded (no frames).')
 			const realFps = clamp(n / ((Date.now() - t0) / 1000), 1, 30)
-			await run(ffmpeg, ['-y', '-loglevel', 'error', '-framerate', realFps.toFixed(2), '-i', path.join(dir, 'f%05d.jpg'), '-vf', vf, ...encode], Math.max(20_000, timeoutMs))
+			await run(
+				ffmpeg,
+				[
+					'-y',
+					'-loglevel',
+					'error',
+					'-framerate',
+					realFps.toFixed(2),
+					'-i',
+					path.join(dir, 'f%05d.jpg'),
+					'-vf',
+					vf,
+					...encode
+				],
+				Math.max(20_000, timeoutMs)
+			)
 		}
 
 		return await fs.readFile(out)
@@ -236,6 +298,7 @@ export async function renderHtmlPreview(html: string, opts: HtmlPreviewOptions =
 		try {
 			await browser?.close()
 		} catch {}
+
 		fs.rm(dir, { recursive: true, force: true }).catch(() => undefined)
 	}
 }

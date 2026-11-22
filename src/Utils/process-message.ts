@@ -31,10 +31,10 @@ import {
 	jidNormalizedUser
 } from '../WABinary'
 import { aesDecryptGCM, hmacSign, sha256 } from './crypto'
-import type { SecretStore } from './secret-store'
 import { getKeyAuthor, toNumber } from './generics'
 import { downloadAndProcessHistorySyncNotification } from './history'
 import type { ILogger } from './logger'
+import type { SecretStore } from './secret-store'
 import { buildMergedTcTokenIndexWrite, resolveTcTokenJid } from './tc-token-utils'
 
 type ProcessMessageContext = {
@@ -368,7 +368,7 @@ const processMessage = async (
 			s = m?.messageContextInfo?.messageSecret || m?.deviceSentMessage?.message?.messageContextInfo?.messageSecret
 		} catch {}
 
-		return s && s.length ? s : secretStore?.getSecret(key.id)
+		return s?.length ? s : secretStore?.getSecret(key.id)
 	}
 
 	/** all jids that may stand for a message's author */
@@ -661,6 +661,7 @@ const processMessage = async (
 			const sec = secretStore?.getSecret(creationMsgKey.id)
 			if (sec) eventMsg = { ...(eventMsg || {}), messageContextInfo: { messageSecret: sec } }
 		}
+
 		if (eventMsg) {
 			try {
 				const meIdNormalised = jidNormalizedUser(meId)

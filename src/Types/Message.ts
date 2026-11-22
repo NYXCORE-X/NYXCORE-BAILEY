@@ -230,7 +230,13 @@ export type WASendableProduct = Omit<proto.Message.ProductMessage.IProductSnapsh
 }
 
 export type StickerPackOptions = {
-	stickers: { data?: WAMediaUpload; image?: WAMediaUpload; emojis?: string[]; accessibilityLabel?: string; isLottie?: boolean }[]
+	stickers: {
+		data?: WAMediaUpload
+		image?: WAMediaUpload
+		emojis?: string[]
+		accessibilityLabel?: string
+		isLottie?: boolean
+	}[]
 	cover?: WAMediaUpload
 	name?: string
 	publisher?: string

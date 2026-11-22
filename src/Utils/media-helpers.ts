@@ -26,7 +26,9 @@ const run = (cmd: string, args: string[], input?: Buffer) =>
 		p.stderr.on('data', d => err.push(d))
 		p.on('error', e => reject(new Error(`${cmd} is not available (${e.message})`)))
 		p.on('close', code =>
-			code === 0 ? resolve(Buffer.concat(out)) : reject(new Error(`${cmd} failed: ${Buffer.concat(err).toString().slice(-300)}`))
+			code === 0
+				? resolve(Buffer.concat(out))
+				: reject(new Error(`${cmd} failed: ${Buffer.concat(err).toString().slice(-300)}`))
 		)
 		p.stdin.on('error', () => undefined)
 		if (input) p.stdin.end(input)
@@ -82,7 +84,9 @@ export const addStickerExif = (webp: Buffer, { pack = '', author = '', emojis = 
 			emojis
 		})
 	)
-	const head = Buffer.from([0x49, 0x49, 0x2a, 0, 0x08, 0, 0, 0, 0x01, 0, 0x41, 0x57, 0x07, 0, 0, 0, 0, 0, 0x16, 0, 0, 0])
+	const head = Buffer.from([
+		0x49, 0x49, 0x2a, 0, 0x08, 0, 0, 0, 0x01, 0, 0x41, 0x57, 0x07, 0, 0, 0, 0, 0, 0x16, 0, 0, 0
+	])
 	head.writeUInt32LE(json.length, 14)
 	const exif = Buffer.concat([head, json])
 	const chunk = (tag: string, data: Buffer) => {
@@ -152,7 +156,16 @@ export const makeSticker = async (input: Buffer | Uint8Array | string, opts: Sti
 			fit === 'crop'
 				? 'scale=512:512:force_original_aspect_ratio=increase,crop=512:512'
 				: 'scale=512:512:force_original_aspect_ratio=decrease,pad=512:512:(ow-iw)/2:(oh-ih)/2:color=0x00000000,format=rgba'
-		const args = ['-i', 'pipe:0', '-vf', opts.animated ? `${vf},fps=15` : vf, '-c:v', 'libwebp', '-quality', String(quality)]
+		const args = [
+			'-i',
+			'pipe:0',
+			'-vf',
+			opts.animated ? `${vf},fps=15` : vf,
+			'-c:v',
+			'libwebp',
+			'-quality',
+			String(quality)
+		]
 		if (opts.animated) args.push('-loop', '0', '-t', '8', '-an')
 		else args.push('-frames:v', '1')
 		args.push('-f', 'webp', 'pipe:1')
@@ -167,7 +180,26 @@ export const toVoiceNote = async (input: Buffer | Uint8Array | string) => {
 	const buf = await toBuffer(input)
 	return run(
 		'ffmpeg',
-		['-v', 'error', '-i', 'pipe:0', '-vn', '-c:a', 'libopus', '-b:a', '32k', '-ar', '48000', '-ac', '1', '-application', 'voip', '-f', 'ogg', 'pipe:1'],
+		[
+			'-v',
+			'error',
+			'-i',
+			'pipe:0',
+			'-vn',
+			'-c:a',
+			'libopus',
+			'-b:a',
+			'32k',
+			'-ar',
+			'48000',
+			'-ac',
+			'1',
+			'-application',
+			'voip',
+			'-f',
+			'ogg',
+			'pipe:1'
+		],
 		buf
 	)
 }

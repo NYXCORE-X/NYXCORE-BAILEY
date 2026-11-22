@@ -9,7 +9,7 @@
  * cannot change the behaviour of the core protocol code.
  */
 
-import { canRenderHtmlPreview, renderHtmlPreview, type HtmlPreviewOptions } from '../Utils/html-preview'
+import { canRenderHtmlPreview, type HtmlPreviewOptions, renderHtmlPreview } from '../Utils/html-preview'
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type AnySock = any
@@ -42,7 +42,9 @@ export const formatPairingCode = (code: string) => (code.match(/.{1,4}/g) || [co
 
 /** Extracts the invite code from a channel link, or returns the input when it is already a code. */
 export const parseChannelInvite = (input: string): string => {
-	const m = String(input).trim().match(/whatsapp\.com\/channel\/([A-Za-z0-9_-]+)/i)
+	const m = String(input)
+		.trim()
+		.match(/whatsapp\.com\/channel\/([A-Za-z0-9_-]+)/i)
 	return m ? m[1]! : String(input).trim()
 }
 
@@ -84,7 +86,7 @@ export const makeNyxHelpers = (sock: AnySock) => {
 		let last: unknown
 		for (let attempt = 1; attempt <= retries; attempt++) {
 			try {
-				await sleep(attempt === 1 ? 350 : opts.retryDelayMs ?? 900)
+				await sleep(attempt === 1 ? 350 : (opts.retryDelayMs ?? 900))
 				const code: string = await sock.requestPairingCode(number, opts.customCode)
 				return { code, formatted: formatPairingCode(code), phone: number }
 			} catch (err) {
@@ -92,7 +94,9 @@ export const makeNyxHelpers = (sock: AnySock) => {
 			}
 		}
 
-		throw new Error(`Could not get a pairing code after ${retries} attempts: ${last instanceof Error ? last.message : String(last)}`)
+		throw new Error(
+			`Could not get a pairing code after ${retries} attempts: ${last instanceof Error ? last.message : String(last)}`
+		)
 	}
 
 	// ── newsletter / channel shortcuts ──
@@ -134,7 +138,10 @@ export const makeNyxHelpers = (sock: AnySock) => {
 		sock.readMessages([key])
 
 	/** React to someone's status with an emoji. */
-	const reactToStatus = async (key: { remoteJid?: string | null; id?: string | null; participant?: string | null }, emoji: string) => {
+	const reactToStatus = async (
+		key: { remoteJid?: string | null; id?: string | null; participant?: string | null },
+		emoji: string
+	) => {
 		const author = key.participant || key.remoteJid
 		return sock.sendMessage(
 			'status@broadcast',
@@ -148,7 +155,12 @@ export const makeNyxHelpers = (sock: AnySock) => {
 	 * Send an HTML page (string or Buffer) as a proper file the user can open in a browser.
 	 * opts: { caption, quoted }
 	 */
-	const sendHtmlFile = async (jid: string, html: string | Buffer, fileName = 'page.html', opts: { caption?: string; quoted?: unknown } = {}) => {
+	const sendHtmlFile = async (
+		jid: string,
+		html: string | Buffer,
+		fileName = 'page.html',
+		opts: { caption?: string; quoted?: unknown } = {}
+	) => {
 		const name = /\.html?$/i.test(fileName) ? fileName : `${fileName}.html`
 		const buffer = Buffer.isBuffer(html) ? html : Buffer.from(String(html), 'utf8')
 		return sock.sendMessage(
@@ -162,7 +174,11 @@ export const makeNyxHelpers = (sock: AnySock) => {
 	 * Send a short looping preview (mp4 buffer or {url}) that plays like a GIF.
 	 * opts: { caption, quoted }
 	 */
-	const sendAnimatedPreview = async (jid: string, video: Buffer | { url: string }, opts: { caption?: string; quoted?: unknown } = {}) =>
+	const sendAnimatedPreview = async (
+		jid: string,
+		video: Buffer | { url: string },
+		opts: { caption?: string; quoted?: unknown } = {}
+	) =>
 		sock.sendMessage(
 			jid,
 			{ video, gifPlayback: true, mimetype: 'video/mp4', ...(opts.caption ? { caption: opts.caption } : {}) },
@@ -189,7 +205,13 @@ export const makeNyxHelpers = (sock: AnySock) => {
 	const sendHtmlPage = async (
 		jid: string,
 		html: string | Buffer,
-		opts: { fileName?: string; previewCaption?: string; fileCaption?: string; quoted?: unknown; preview?: HtmlPreviewOptions | false } = {}
+		opts: {
+			fileName?: string
+			previewCaption?: string
+			fileCaption?: string
+			quoted?: unknown
+			preview?: HtmlPreviewOptions | false
+		} = {}
 	) => {
 		const source = Buffer.isBuffer(html) ? html.toString('utf8') : String(html)
 		let video: Buffer | undefined

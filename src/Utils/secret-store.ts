@@ -82,7 +82,7 @@ export const makeSecretStore = (opts: SecretStoreOptions = {}) => {
 			m.messageContextInfo?.messageSecret ||
 			inner?.messageContextInfo?.messageSecret ||
 			m.deviceSentMessage?.message?.messageContextInfo?.messageSecret
-		if (!secret || !secret.length) return
+		if (!secret?.length) return
 		const poll = inner?.pollCreationMessage || inner?.pollCreationMessageV2 || inner?.pollCreationMessageV3
 		const names = (poll?.options || []).map(o => o.optionName!).filter(Boolean)
 		set(id, {

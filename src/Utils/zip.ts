@@ -103,7 +103,8 @@ export const readZip = (zip: Buffer, { maxFiles = 200, maxBytes = 64 * 1024 * 10
 	const out: ZipEntry[] = []
 	let total = 0
 	for (let i = 0; i < count; i++) {
-		if (p + 46 > zip.length || zip.readUInt32LE(p) !== 0x02014b50) throw new Boom('Corrupt zip directory', { statusCode: 400 })
+		if (p + 46 > zip.length || zip.readUInt32LE(p) !== 0x02014b50)
+			throw new Boom('Corrupt zip directory', { statusCode: 400 })
 		const method = zip.readUInt16LE(p + 10)
 		const csize = zip.readUInt32LE(p + 20)
 		const usize = zip.readUInt32LE(p + 24)
@@ -116,7 +117,8 @@ export const readZip = (zip: Buffer, { maxFiles = 200, maxBytes = 64 * 1024 * 10
 
 		total += usize
 		if (total > maxBytes) throw new Boom('Zip too large', { statusCode: 400 })
-		if (lho + 30 > zip.length || zip.readUInt32LE(lho) !== 0x04034b50) throw new Boom('Corrupt zip entry', { statusCode: 400 })
+		if (lho + 30 > zip.length || zip.readUInt32LE(lho) !== 0x04034b50)
+			throw new Boom('Corrupt zip entry', { statusCode: 400 })
 		const start = lho + 30 + zip.readUInt16LE(lho + 26) + zip.readUInt16LE(lho + 28)
 		const raw = zip.subarray(start, start + csize)
 		let data: Buffer

@@ -17,7 +17,11 @@ export interface ResilientOptions {
 }
 
 /** status codes after which reconnecting can never help */
-const FATAL = new Set<number>([DisconnectReason.loggedOut, DisconnectReason.connectionReplaced, DisconnectReason.forbidden])
+const FATAL = new Set<number>([
+	DisconnectReason.loggedOut,
+	DisconnectReason.connectionReplaced,
+	DisconnectReason.forbidden
+])
 
 /** Backoff delay: 1s, 2s, 4s … capped, with a little jitter. */
 export const backoffDelay = (failures: number, base = 1000, max = 30_000) =>
@@ -61,9 +65,12 @@ export const makeResilientSocket = (config: Parameters<typeof makeWASocket>[0], 
 				return
 			}
 
-			setTimeout(() => {
-				if (!stopped) start()
-			}, backoffDelay(failures, opts.baseDelayMs, opts.maxDelayMs))
+			setTimeout(
+				() => {
+					if (!stopped) start()
+				},
+				backoffDelay(failures, opts.baseDelayMs, opts.maxDelayMs)
+			)
 		})
 	}
 

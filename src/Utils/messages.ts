@@ -39,8 +39,8 @@ import {
 	getAudioWaveform,
 	getRawMediaUploadData,
 	getStream,
-	toBuffer,
-	type MediaDownloadOptions
+	type MediaDownloadOptions,
+	toBuffer
 } from './messages-media'
 import { shouldIncludeReportingToken } from './reporting-utils'
 import { createZip, readZip } from './zip'
@@ -395,14 +395,14 @@ function hasOptionalProperty<T, K extends PropertyKey>(obj: T, key: K): obj is W
 	return typeof obj === 'object' && obj !== null && key in obj && (obj as any)[key] !== null
 }
 
-
 // ───────────────────────── sticker packs ─────────────────────────
 // Ported from the approach in itsliaaa/baileys (MIT; fields validated against
 // WhiskeySockets/Baileys#1561). A pack is a zip of .webp files (+ tray icon),
 // encrypted and uploaded as media type "sticker-pack", plus a 252px jpeg
 // thumbnail encrypted with the SAME media key ("thumbnail-sticker-pack").
 
-const isWebPBuffer = (b: Buffer) => b.length > 12 && b.toString('ascii', 0, 4) === 'RIFF' && b.toString('ascii', 8, 12) === 'WEBP'
+const isWebPBuffer = (b: Buffer) =>
+	b.length > 12 && b.toString('ascii', 0, 4) === 'RIFF' && b.toString('ascii', 8, 12) === 'WEBP'
 const isAnimatedWebP = (b: Buffer) => {
 	if (!isWebPBuffer(b)) return false
 	// VP8X header: flags byte at offset 20, bit 0x02 = animation
@@ -415,7 +415,9 @@ const toWebp = async (buf: Buffer): Promise<Buffer> => {
 	//@ts-ignore optional dependency
 	const sharp = (await import('sharp').catch(() => undefined))?.default
 	if (!sharp) {
-		throw new Boom('Sticker pack images must be .webp (install "sharp" to auto-convert other formats)', { statusCode: 400 })
+		throw new Boom('Sticker pack images must be .webp (install "sharp" to auto-convert other formats)', {
+			statusCode: 400
+		})
 	}
 
 	return sharp(buf).resize(512, 512, { fit: 'inside' }).webp({ quality: 80 }).toBuffer()
@@ -438,7 +440,13 @@ const makePackThumbnail = async (buf: Buffer): Promise<Buffer | undefined> => {
 }
 
 type StickerPackInput = {
-	stickers: { data?: WAMediaUpload; image?: WAMediaUpload; emojis?: string[]; accessibilityLabel?: string; isLottie?: boolean }[]
+	stickers: {
+		data?: WAMediaUpload
+		image?: WAMediaUpload
+		emojis?: string[]
+		accessibilityLabel?: string
+		isLottie?: boolean
+	}[]
 	cover?: WAMediaUpload
 	name?: string
 	publisher?: string
@@ -525,7 +533,11 @@ const prepareStickerPackMessage = async (input: StickerPackInput, options: Messa
 	try {
 		const thumb = await makePackThumbnail(coverBuffer)
 		if (thumb?.length) {
-			const t = await encryptedStream(thumb, 'thumbnail-sticker-pack', { logger, opts: options.options, mediaKey: packUpload.mediaKey })
+			const t = await encryptedStream(thumb, 'thumbnail-sticker-pack', {
+				logger,
+				opts: options.options,
+				mediaKey: packUpload.mediaKey
+			})
 			let tr: { mediaUrl?: string; directPath?: string }
 			try {
 				tr = await options.upload(t.encFilePath, {
@@ -562,7 +574,7 @@ export const extractStickerPack = async (
 	options: MediaDownloadOptions = {}
 ) => {
 	const pack: proto.Message.IStickerPackMessage | null | undefined =
-		'key' in input ? extractMessageContent((input as proto.IWebMessageInfo).message)?.stickerPackMessage : (input as any)
+		'key' in input ? extractMessageContent(input.message)?.stickerPackMessage : (input as any)
 	if (!pack?.mediaKey || !pack.directPath) throw new Boom('Not a sticker pack message', { statusCode: 400 })
 	const stream = await downloadContentFromMessage(pack as DownloadableMessage, 'sticker-pack', options)
 	const chunks: Buffer[] = []
@@ -1268,10 +1280,16 @@ export const downloadMediaMessage = async <Type extends 'buffer' | 'stream'>(
 		}
 
 		const contentType = getContentType(mContent)
-		let mediaType = (contentType === 'stickerPackMessage' ? 'sticker-pack' : contentType?.replace('Message', '')) as MediaType
+		let mediaType = (
+			contentType === 'stickerPackMessage' ? 'sticker-pack' : contentType?.replace('Message', '')
+		) as MediaType
 		const media = mContent[contentType!]
 
-		if (!media || typeof media !== 'object' || (!('url' in media) && !('thumbnailDirectPath' in media) && !('directPath' in media))) {
+		if (
+			!media ||
+			typeof media !== 'object' ||
+			(!('url' in media) && !('thumbnailDirectPath' in media) && !('directPath' in media))
+		) {
 			throw new Boom(`"${contentType}" message is not a media message`)
 		}
 
