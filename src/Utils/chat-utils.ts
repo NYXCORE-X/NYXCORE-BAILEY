@@ -851,11 +851,13 @@ export const processSyncAction = (
 
 	// raw feed of every app-state change, so unknown actions (e.g. chat lock) can be inspected
 	if (action) {
-		const actionName = Object.keys(action).find(k => (action as Record<string, unknown>)[k] != null) || 'unknown'
+		const actionRecord = action as Record<string, unknown>
+		const actionName =
+			Object.keys(actionRecord).find(k => actionRecord[k] !== null && actionRecord[k] !== undefined) || 'unknown'
 		ev.emit('app-state.mutation', {
 			index: syncAction.index as string[],
 			action: actionName,
-			value: (action as Record<string, unknown>)[actionName],
+			value: actionRecord[actionName],
 			version: syncAction.syncAction?.version as number | null | undefined
 		})
 	}
