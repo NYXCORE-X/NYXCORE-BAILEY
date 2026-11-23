@@ -656,6 +656,18 @@ export const chatModificationToAppPatch = (mod: ChatModification, jid: string) =
 			apiVersion: 6,
 			operation: OP.SET
 		}
+	} else if ('lock' in mod) {
+		patch = {
+			syncAction: {
+				lockChatAction: {
+					locked: !!mod.lock
+				}
+			},
+			index: ['lockChat', jid],
+			type: 'regular_low',
+			apiVersion: 7,
+			operation: OP.SET
+		}
 	} else if ('pin' in mod) {
 		patch = {
 			syncAction: {

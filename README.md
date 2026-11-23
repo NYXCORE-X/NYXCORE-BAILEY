@@ -1520,3 +1520,17 @@ const presence = nyx.keepPresence('offline')   // or 'online'
 presence.set('online')                         // switch any time
 presence.stop()                                // stop keeping it
 ```
+
+
+## Chat tools (NYXCORE)
+
+```js
+const nyx = makeNyxHelpers(sock)
+await nyx.archiveChat(jid)        // await nyx.unarchiveChat(jid)
+await nyx.lockChat(jid)           // await nyx.unlockChat(jid)
+await nyx.clearChat(jid)          // await nyx.deleteChat(jid)
+await nyx.pinChat(jid)            // await nyx.unpinChat(jid)
+await nyx.setDisappearing(jid, '7d')   // 'off' | '24h' | '7d' | '90d' | seconds; private chats and groups
+await nyx.pinMessage(jid, msg.key, 604800)   // pin a message for 7 days
+await nyx.unpinMessage(jid, msg.key)
+```

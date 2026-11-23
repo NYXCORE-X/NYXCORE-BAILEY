@@ -1,3 +1,12 @@
+# 1.5.0 (NYXCORE)
+
+- feat: cleaner modules: the helpers are now small files in `src/Socket/nyx/` (pairing, channels, status, groupStatus, stickerPack, chats, presence, html). `makeNyxHelpers(sock)` still returns everything, nothing was renamed.
+- feat: chat tools: `archiveChat`, `unarchiveChat`, `lockChat`, `unlockChat`, `clearChat`, `deleteChat`, `pinChat`, `unpinChat`, `muteChat`, `unmuteChat`, `markChatRead`, `markChatUnread`. Archive / clear / read no longer need you to find the last message first.
+- feat: `setDisappearing(jid, 'off' | '24h' | '7d' | '90d' | seconds)` works for private chats and groups
+- feat: `pinMessage(jid, key, seconds?)` and `unpinMessage(jid, key)`
+- feat: `chatModify({ lock: true | false }, jid)` (chat lock)
+- feat: `postGroupTextStatus` / `postGroupMediaStatus` and `sendStickerPack` shortcuts
+
 # 1.4.0 (NYXCORE)
 - feat: `keepPresence('online' | 'offline', { intervalMs, settleMs })` in the helpers: keeps the account showing online (always online) or offline (always offline, re-applied right after every incoming message). Returns `{ set(mode), stop(), mode }`.
 - feat: `useNyxAuthState(folder)`: drop-in for useMultiFileAuthState with atomic writes, damaged files quarantined (`*.corrupt`) instead of lost, and automatic recovery of creds.json from `creds.json.bak`. Stops the "failed to decrypt / Bad MAC" storms that follow a crash or restart in the middle of a write.

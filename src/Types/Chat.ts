@@ -92,6 +92,7 @@ export type ChatModification =
 	  }
 	| { pushNameSetting: string }
 	| { pin: boolean }
+	| { lock: boolean }
 	| {
 			/** mute for duration, or provide timestamp of mute to remove*/
 			mute: number | null
