@@ -1,3 +1,8 @@
+# 1.5.4 (NYXCORE)
+
+- fix: chat lock now uses the index WhatsApp really sends (`['lock', chatJid]`, captured from a real phone), instead of the guessed `lockChat`.
+- fix: `app-state.mutation` now names the real action instead of always `timestamp`.
+
 # 1.5.3 (NYXCORE)
 
 - fix: chat tools (archive, pin, lock, clear...) wrongly said the app-state key was missing on sockets without `getAppStateSyncKey` (e.g. the nyxcoresocket package). The key is now read from the auth state, and the phone is asked through `relayMessage`.

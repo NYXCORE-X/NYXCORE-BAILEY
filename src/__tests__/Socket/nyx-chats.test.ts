@@ -101,7 +101,7 @@ describe('app-state key on a plain socket', () => {
 describe('chatModify lock', () => {
 	it('builds a lockChat app state patch', () => {
 		const patch = chatModificationToAppPatch({ lock: true }, '1@s.whatsapp.net')
-		expect(patch.index).toEqual(['lockChat', '1@s.whatsapp.net'])
+		expect(patch.index).toEqual(['lock', '1@s.whatsapp.net'])
 		expect(patch.syncAction.lockChatAction).toEqual({ locked: true })
 	})
 })

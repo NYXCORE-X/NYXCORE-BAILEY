@@ -663,7 +663,7 @@ export const chatModificationToAppPatch = (mod: ChatModification, jid: string) =
 					locked: !!mod.lock
 				}
 			},
-			index: ['lockChat', jid],
+			index: ['lock', jid],
 			type: 'regular_low',
 			apiVersion: 7,
 			operation: OP.SET
@@ -852,8 +852,9 @@ export const processSyncAction = (
 	// raw feed of every app-state change, so unknown actions (e.g. chat lock) can be inspected
 	if (action) {
 		const actionRecord = action as Record<string, unknown>
-		const actionName =
-			Object.keys(actionRecord).find(k => actionRecord[k] !== null && actionRecord[k] !== undefined) || 'unknown'
+		const present = Object.keys(actionRecord).filter(k => actionRecord[k] !== null && actionRecord[k] !== undefined)
+		// every mutation carries a `timestamp`; the interesting field is the other one
+		const actionName = present.find(k => k !== 'timestamp') || present[0] || 'unknown'
 		ev.emit('app-state.mutation', {
 			index: syncAction.index as string[],
 			action: actionName,
