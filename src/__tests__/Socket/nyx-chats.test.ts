@@ -87,7 +87,10 @@ describe('app-state key repair', () => {
 describe('app-state key on a plain socket', () => {
 	it('finds the key through authState when the socket has no helper methods', async () => {
 		const sock: any = {
-			authState: { creds: { myAppStateKeyId: 'AAAA' }, keys: { get: jest.fn(async () => ({ AAAA: { keyData: Buffer.alloc(1) } })) } },
+			authState: {
+				creds: { myAppStateKeyId: 'AAAA' },
+				keys: { get: jest.fn(async () => ({ AAAA: { keyData: Buffer.alloc(1) } })) }
+			},
 			chatModify: jest.fn(async () => undefined)
 		}
 		await makeChatTools(sock).pinChat('1@s.whatsapp.net')
