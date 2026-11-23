@@ -1,3 +1,7 @@
+# 1.5.2 (NYXCORE)
+
+- feat: new event `app-state.mutation` ({ index, action, value, version }): every app-state change from the phone, raw. Lets you see exactly what WhatsApp sends for things like chat lock.
+
 # 1.5.1 (NYXCORE)
 
 - fix: chat tools (archive, lock, clear, pin, mute, mark read) no longer fail straight away with `myAppStateKey ("...") not present`: they ask your phone for the key, wait up to 30 s (`makeChatTools(sock, { keyWaitMs })`) and then continue, or fail with a clear message

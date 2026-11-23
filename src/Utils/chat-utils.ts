@@ -849,6 +849,17 @@ export const processSyncAction = (
 		index: [type, id, msgId, fromMe]
 	} = syncAction
 
+	// raw feed of every app-state change, so unknown actions (e.g. chat lock) can be inspected
+	if (action) {
+		const actionName = Object.keys(action).find(k => (action as Record<string, unknown>)[k] != null) || 'unknown'
+		ev.emit('app-state.mutation', {
+			index: syncAction.index as string[],
+			action: actionName,
+			value: (action as Record<string, unknown>)[actionName],
+			version: syncAction.syncAction?.version as number | null | undefined
+		})
+	}
+
 	if (action?.muteAction) {
 		ev.emit('chats.update', [
 			{

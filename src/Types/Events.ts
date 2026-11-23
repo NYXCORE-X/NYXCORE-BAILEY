@@ -155,6 +155,8 @@ export type BaileysEventMap = {
 
 	/** Settings and actions sync events */
 	'chats.lock': { id: string; locked: boolean }
+	/** every app-state change received from the phone (raw), for debugging / reverse engineering. */
+	'app-state.mutation': { index: string[]; action: string; value: unknown; version?: number | null }
 	'settings.update':
 		| { setting: 'unarchiveChats'; value: boolean }
 		| { setting: 'locale'; value: string }
