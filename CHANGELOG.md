@@ -1,3 +1,7 @@
+# 1.5.1 (NYXCORE)
+
+- fix: chat tools (archive, lock, clear, pin, mute, mark read) no longer fail straight away with `myAppStateKey ("...") not present`: they ask your phone for the key, wait up to 30 s (`makeChatTools(sock, { keyWaitMs })`) and then continue, or fail with a clear message
+
 # 1.5.0 (NYXCORE)
 
 - feat: cleaner modules: the helpers are now small files in `src/Socket/nyx/` (pairing, channels, status, groupStatus, stickerPack, chats, presence, html). `makeNyxHelpers(sock)` still returns everything, nothing was renamed.

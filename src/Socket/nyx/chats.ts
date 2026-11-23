@@ -26,7 +26,37 @@ export const disappearingSeconds = (d: DisappearingDuration): number => {
 	return s
 }
 
-export const makeChatTools = (sock: AnySock) => {
+export interface ChatToolsOptions {
+	/** how long to wait for your phone to send a missing app-state key, ms (default 30000) */
+	keyWaitMs?: number
+}
+
+export const makeChatTools = (sock: AnySock, opts: ChatToolsOptions = {}) => {
+	/**
+	 * Archive, lock, clear, pin and mute are synced through WhatsApp's app state, which needs the app-state key.
+	 * If that key is missing, ask the phone for it and wait a little instead of failing straight away.
+	 */
+	const ensureKey = async () => {
+		const id = sock.authState?.creds?.myAppStateKeyId
+		if (!id) throw new Error('Not ready yet: the first app-state sync has not finished. Wait a minute and retry.')
+		if (await sock.getAppStateSyncKey?.(id)) return
+		await sock.ensureAppStateKey?.({ force: true })
+		const until = Date.now() + (opts.keyWaitMs ?? 30_000)
+		while (Date.now() < until) {
+			await new Promise(r => setTimeout(r, 1000))
+			if (await sock.getAppStateSyncKey?.(id)) return
+		}
+
+		throw new Error(
+			'App-state key is missing and your phone did not send it. Open WhatsApp on the phone and try again; if it keeps failing, re-link the device.'
+		)
+	}
+
+	const modify = async (mod: any, jid: string) => {
+		await ensureKey()
+		return sock.chatModify(mod, jid)
+	}
+
 	/** "up to now" range, or the message(s) you give */
 	const range = (last?: any) => {
 		if (last && (Array.isArray(last) || last.lastMessageTimestamp !== undefined || last.messages)) return last
@@ -34,21 +64,21 @@ export const makeChatTools = (sock: AnySock) => {
 		return { lastMessageTimestamp: Math.floor(Date.now() / 1000) }
 	}
 
-	const archiveChat = (jid: string, last?: any) => sock.chatModify({ archive: true, lastMessages: range(last) }, jid)
-	const unarchiveChat = (jid: string, last?: any) => sock.chatModify({ archive: false, lastMessages: range(last) }, jid)
+	const archiveChat = (jid: string, last?: any) => modify({ archive: true, lastMessages: range(last) }, jid)
+	const unarchiveChat = (jid: string, last?: any) => modify({ archive: false, lastMessages: range(last) }, jid)
 	/** lock / unlock a chat (the "Locked chats" folder). Needs a WhatsApp version that supports chat lock. */
-	const lockChat = (jid: string) => sock.chatModify({ lock: true }, jid)
-	const unlockChat = (jid: string) => sock.chatModify({ lock: false }, jid)
-	const clearChat = (jid: string, last?: any) => sock.chatModify({ clear: true, lastMessages: range(last) }, jid)
-	const deleteChat = (jid: string, last?: any) => sock.chatModify({ delete: true, lastMessages: range(last) }, jid)
-	const pinChat = (jid: string) => sock.chatModify({ pin: true }, jid)
-	const unpinChat = (jid: string) => sock.chatModify({ pin: false }, jid)
+	const lockChat = (jid: string) => modify({ lock: true }, jid)
+	const unlockChat = (jid: string) => modify({ lock: false }, jid)
+	const clearChat = (jid: string, last?: any) => modify({ clear: true, lastMessages: range(last) }, jid)
+	const deleteChat = (jid: string, last?: any) => modify({ delete: true, lastMessages: range(last) }, jid)
+	const pinChat = (jid: string) => modify({ pin: true }, jid)
+	const unpinChat = (jid: string) => modify({ pin: false }, jid)
 	/** mute for `ms` milliseconds (e.g. 8 * 3600 * 1000) */
-	const muteChat = (jid: string, ms: number) => sock.chatModify({ mute: Date.now() + ms }, jid)
-	const unmuteChat = (jid: string) => sock.chatModify({ mute: null }, jid)
-	const markChatRead = (jid: string, last?: any) => sock.chatModify({ markRead: true, lastMessages: range(last) }, jid)
+	const muteChat = (jid: string, ms: number) => modify({ mute: Date.now() + ms }, jid)
+	const unmuteChat = (jid: string) => modify({ mute: null }, jid)
+	const markChatRead = (jid: string, last?: any) => modify({ markRead: true, lastMessages: range(last) }, jid)
 	const markChatUnread = (jid: string, last?: any) =>
-		sock.chatModify({ markRead: false, lastMessages: range(last) }, jid)
+		modify({ markRead: false, lastMessages: range(last) }, jid)
 
 	/**
 	 * Disappearing messages for a private chat or a group.

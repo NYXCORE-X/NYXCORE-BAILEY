@@ -5,6 +5,9 @@ describe('nyx chat tools', () => {
 	const make = () => {
 		const calls: any[] = []
 		const sock = {
+			authState: { creds: { myAppStateKeyId: 'AAAA' } },
+			getAppStateSyncKey: jest.fn(async () => ({ keyData: Buffer.alloc(1) })),
+			ensureAppStateKey: jest.fn(async () => ({ requested: true })),
 			chatModify: jest.fn(async (mod: any, jid: string) => void calls.push(['chatModify', mod, jid])),
 			sendMessage: jest.fn(async (jid: string, content: any) => void calls.push(['sendMessage', jid, content])),
 			groupToggleEphemeral: jest.fn(async (jid: string, s: number) => void calls.push(['groupToggleEphemeral', jid, s]))
@@ -51,6 +54,33 @@ describe('nyx chat tools', () => {
 		await tools.unpinMessage('1@s.whatsapp.net', key)
 		expect(calls[0][2]).toEqual({ pin: key, type: 1, time: 604800 })
 		expect(calls[1][2]).toEqual({ pin: key, type: 2 })
+	})
+})
+
+describe('app-state key repair', () => {
+	it('asks the phone and gives a clear error when the key never arrives', async () => {
+		const sock: any = {
+			authState: { creds: { myAppStateKeyId: 'AAAA' } },
+			getAppStateSyncKey: jest.fn(async () => undefined),
+			ensureAppStateKey: jest.fn(async () => ({ requested: true })),
+			chatModify: jest.fn()
+		}
+		const tools = makeChatTools(sock, { keyWaitMs: 1200 })
+		await expect(tools.archiveChat('1@s.whatsapp.net')).rejects.toThrow(/did not send/)
+		expect(sock.ensureAppStateKey).toHaveBeenCalledWith({ force: true })
+		expect(sock.chatModify).not.toHaveBeenCalled()
+	})
+
+	it('continues as soon as the key shows up', async () => {
+		let calls = 0
+		const sock: any = {
+			authState: { creds: { myAppStateKeyId: 'AAAA' } },
+			getAppStateSyncKey: jest.fn(async () => (++calls > 2 ? { keyData: Buffer.alloc(1) } : undefined)),
+			ensureAppStateKey: jest.fn(async () => ({ requested: true })),
+			chatModify: jest.fn(async () => undefined)
+		}
+		await makeChatTools(sock, { keyWaitMs: 5000 }).pinChat('1@s.whatsapp.net')
+		expect(sock.chatModify).toHaveBeenCalledWith({ pin: true }, '1@s.whatsapp.net')
 	})
 })
 
