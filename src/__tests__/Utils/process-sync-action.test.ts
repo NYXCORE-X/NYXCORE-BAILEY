@@ -43,6 +43,9 @@ const createSyncAction = (
 
 const mockMe: Contact = { id: 'me@s.whatsapp.net', name: 'Test User' }
 
+const emittedExceptDebug = (ev: { emit: unknown }) =>
+	((ev.emit as { mock: { calls: unknown[][] } }).mock.calls as unknown[][]).filter(c => c[0] !== 'app-state.mutation')
+
 describe('processSyncAction', () => {
 	let ev: ReturnType<typeof createMockEventEmitter>
 	let logger: ILogger
@@ -184,7 +187,7 @@ describe('processSyncAction', () => {
 		it('does not emit when name is same or empty', () => {
 			const same = createSyncAction({ pushNameSetting: { name: 'Test User' } }, ['pushName'])
 			processSyncAction(same, ev, mockMe, undefined, logger)
-			expect(ev.emit.mock.calls.filter(c => c[0] !== 'app-state.mutation')).toHaveLength(0)
+			expect(emittedExceptDebug(ev)).toHaveLength(0)
 		})
 	})
 
@@ -236,7 +239,7 @@ describe('processSyncAction', () => {
 				'chat@s.whatsapp.net'
 			])
 			processSyncAction(syncAction, ev, mockMe, { accountSettings: { unarchiveChats: false } }, logger)
-			expect(ev.emit.mock.calls.filter(c => c[0] !== 'app-state.mutation')).toHaveLength(0)
+			expect(emittedExceptDebug(ev)).toHaveLength(0)
 		})
 	})
 
@@ -304,7 +307,7 @@ describe('processSyncAction', () => {
 		it('does not emit when pnJid is missing', () => {
 			const syncAction = createSyncAction({ pnForLidChatAction: { pnJid: '' } }, ['pnForLid', '123@lid'])
 			processSyncAction(syncAction, ev, mockMe, undefined, logger)
-			expect(ev.emit.mock.calls.filter(c => c[0] !== 'app-state.mutation')).toHaveLength(0)
+			expect(emittedExceptDebug(ev)).toHaveLength(0)
 		})
 	})
 
@@ -353,7 +356,7 @@ describe('processSyncAction', () => {
 			])
 			processSyncAction(syncAction, ev, mockMe, undefined, logger)
 			expect(logger.debug).toHaveBeenCalledWith({ syncAction, id: 'id123' }, 'unprocessable update')
-			expect(ev.emit.mock.calls.filter(c => c[0] !== 'app-state.mutation')).toHaveLength(0)
+			expect(emittedExceptDebug(ev)).toHaveLength(0)
 		})
 	})
 })
