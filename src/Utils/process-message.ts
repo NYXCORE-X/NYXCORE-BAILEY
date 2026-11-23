@@ -546,29 +546,28 @@ const processMessage = async (
 					const peerDataOperationResult = response.peerDataOperationResult || []
 					for (const result of peerDataOperationResult) {
 						const retryResponse = result?.placeholderMessageResendResponse
-						//eslint-disable-next-line max-depth
+
 						if (!retryResponse?.webMessageInfoBytes) {
 							continue
 						}
 
-						//eslint-disable-next-line max-depth
 						try {
 							const webMessageInfo = proto.WebMessageInfo.decode(retryResponse.webMessageInfoBytes)
 							const msgId = webMessageInfo.key?.id
 							// Retrieve cached original message data (preserves LID details,
 							// timestamps, etc. that the phone may omit in its PDO response)
 							const cachedData = msgId ? await placeholderResendCache?.get<Partial<WAMessage> | true>(msgId) : undefined
-							//eslint-disable-next-line max-depth
+
 							if (msgId) {
 								await placeholderResendCache?.del(msgId)
 							}
 
 							let finalMsg: WAMessage
-							//eslint-disable-next-line max-depth
+
 							if (cachedData && typeof cachedData === 'object') {
 								// Apply decoded message content onto cached metadata (preserves LID etc.)
 								cachedData.message = webMessageInfo.message
-								//eslint-disable-next-line max-depth
+
 								if (webMessageInfo.messageTimestamp) {
 									cachedData.messageTimestamp = webMessageInfo.messageTimestamp
 								}

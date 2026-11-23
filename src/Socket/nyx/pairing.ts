@@ -55,8 +55,7 @@ export const makePairing = (sock: AnySock) => {
 		)
 	}
 
-
 	return {
-		safePairingCode,
+		safePairingCode
 	}
 }

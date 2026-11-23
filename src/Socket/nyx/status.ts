@@ -2,7 +2,6 @@
  * Status (stories): post text or media, view and react.
  */
 import type { AnySock } from './shared'
-/* eslint-disable @typescript-eslint/no-explicit-any */
 
 export const makeStatus = (sock: AnySock) => {
 	// ── status shortcuts ──
@@ -36,11 +35,10 @@ export const makeStatus = (sock: AnySock) => {
 		)
 	}
 
-
 	return {
 		postTextStatus,
 		postMediaStatus,
 		viewStatus,
-		reactToStatus,
+		reactToStatus
 	}
 }

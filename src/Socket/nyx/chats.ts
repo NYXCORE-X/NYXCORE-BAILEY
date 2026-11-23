@@ -47,7 +47,8 @@ export const makeChatTools = (sock: AnySock) => {
 	const muteChat = (jid: string, ms: number) => sock.chatModify({ mute: Date.now() + ms }, jid)
 	const unmuteChat = (jid: string) => sock.chatModify({ mute: null }, jid)
 	const markChatRead = (jid: string, last?: any) => sock.chatModify({ markRead: true, lastMessages: range(last) }, jid)
-	const markChatUnread = (jid: string, last?: any) => sock.chatModify({ markRead: false, lastMessages: range(last) }, jid)
+	const markChatUnread = (jid: string, last?: any) =>
+		sock.chatModify({ markRead: false, lastMessages: range(last) }, jid)
 
 	/**
 	 * Disappearing messages for a private chat or a group.

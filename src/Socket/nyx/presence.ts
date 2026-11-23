@@ -60,8 +60,7 @@ export const makePresence = (sock: AnySock) => {
 		}
 	}
 
-
 	return {
-		keepPresence,
+		keepPresence
 	}
 }

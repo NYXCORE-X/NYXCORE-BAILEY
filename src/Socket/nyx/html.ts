@@ -3,7 +3,6 @@
  */
 import { canRenderHtmlPreview, type HtmlPreviewOptions, renderHtmlPreview } from '../../Utils/html-preview'
 import type { AnySock } from './shared'
-/* eslint-disable @typescript-eslint/no-explicit-any */
 
 export const makeHtml = (sock: AnySock) => {
 	// ── file / preview senders ──
@@ -86,11 +85,10 @@ export const makeHtml = (sock: AnySock) => {
 		return { previewed: !!video, reason }
 	}
 
-
 	return {
 		sendHtmlFile,
 		sendAnimatedPreview,
 		sendHtmlWithPreview,
-		sendHtmlPage,
+		sendHtmlPage
 	}
 }

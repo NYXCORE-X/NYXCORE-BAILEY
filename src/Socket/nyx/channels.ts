@@ -2,7 +2,6 @@
  * Channels (newsletters): follow, unfollow and react.
  */
 import { type AnySock, parseChannelInvite } from './shared'
-/* eslint-disable @typescript-eslint/no-explicit-any */
 
 export const makeChannels = (sock: AnySock) => {
 	// ── newsletter / channel shortcuts ──
@@ -25,10 +24,9 @@ export const makeChannels = (sock: AnySock) => {
 	const reactToChannelPost = async (jid: string, serverId: string, emoji?: string) =>
 		sock.newsletterReactMessage(jid, String(serverId), emoji)
 
-
 	return {
 		followChannel,
 		unfollowChannel,
-		reactToChannelPost,
+		reactToChannelPost
 	}
 }
