@@ -1,0 +1,29 @@
+name: Autofix Lint
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  autofix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20.x
+      - run: |
+          corepack enable
+          corepack prepare yarn@4.9.2 --activate
+      - run: yarn install --immutable
+      - name: Fix formatting and auto-fixable lint
+        run: yarn lint:fix || true
+      - name: Commit fixes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A src
+          git diff --cached --quiet && echo "nothing to fix" || (git commit -m "style: autofix lint and formatting" && git push)

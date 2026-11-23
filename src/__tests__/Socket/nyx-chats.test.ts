@@ -1,13 +1,13 @@
-import { chatModificationToAppPatch } from '../../Utils/chat-utils'
+import { describe, expect, it, jest } from '@jest/globals'
 import { disappearingSeconds, makeChatTools } from '../../Socket/nyx/chats'
-
+import { chatModificationToAppPatch } from '../../Utils/chat-utils'
 describe('nyx chat tools', () => {
 	const make = () => {
 		const calls: any[] = []
 		const sock = {
-			chatModify: jest.fn(async (mod: any, jid: string) => calls.push(['chatModify', mod, jid])),
-			sendMessage: jest.fn(async (jid: string, content: any) => calls.push(['sendMessage', jid, content])),
-			groupToggleEphemeral: jest.fn(async (jid: string, s: number) => calls.push(['groupToggleEphemeral', jid, s]))
+			chatModify: jest.fn(async (mod: any, jid: string) => void calls.push(['chatModify', mod, jid])),
+			sendMessage: jest.fn(async (jid: string, content: any) => void calls.push(['sendMessage', jid, content])),
+			groupToggleEphemeral: jest.fn(async (jid: string, s: number) => void calls.push(['groupToggleEphemeral', jid, s]))
 		}
 		return { sock, calls, tools: makeChatTools(sock) }
 	}
