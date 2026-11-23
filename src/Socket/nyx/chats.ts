@@ -6,6 +6,7 @@
  * (a message, or a list of messages, newest first). If you do not, the current time is used, which is what
  * WhatsApp needs to apply the change to everything up to now.
  */
+import { proto } from '../../../WAProto/index.js'
 import type { AnySock } from './shared'
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -36,15 +37,45 @@ export const makeChatTools = (sock: AnySock, opts: ChatToolsOptions = {}) => {
 	 * Archive, lock, clear, pin and mute are synced through WhatsApp's app state, which needs the app-state key.
 	 * If that key is missing, ask the phone for it and wait a little instead of failing straight away.
 	 */
+	// works on any socket: uses the socket's own helpers when it has them, otherwise the auth state directly
+	const hasKey = async (id: string) => {
+		try {
+			if (typeof sock.getAppStateSyncKey === 'function') return !!(await sock.getAppStateSyncKey(id))
+			const res = await sock.authState?.keys?.get('app-state-sync-key', [id])
+			return !!res?.[id]
+		} catch {
+			return false
+		}
+	}
+
+	const askPhone = async (id: string) => {
+		if (typeof sock.ensureAppStateKey === 'function') return sock.ensureAppStateKey({ force: true })
+		if (typeof sock.relayMessage !== 'function' || !sock.user?.id) return
+		const me = `${String(sock.user.id).split(':')[0]!.split('@')[0]}@s.whatsapp.net`
+		await sock.relayMessage(
+			me,
+			{
+				protocolMessage: {
+					type: proto.Message.ProtocolMessage.Type.APP_STATE_SYNC_KEY_REQUEST,
+					appStateSyncKeyRequest: { keyIds: [{ keyId: Buffer.from(id, 'base64') }] }
+				}
+			},
+			{
+				additionalAttributes: { category: 'peer', push_priority: 'high_force' },
+				additionalNodes: [{ tag: 'meta', attrs: { appdata: 'default' } }]
+			}
+		)
+	}
+
 	const ensureKey = async () => {
 		const id = sock.authState?.creds?.myAppStateKeyId
 		if (!id) throw new Error('Not ready yet: the first app-state sync has not finished. Wait a minute and retry.')
-		if (await sock.getAppStateSyncKey?.(id)) return
-		await sock.ensureAppStateKey?.({ force: true })
+		if (await hasKey(id)) return
+		await askPhone(id)
 		const until = Date.now() + (opts.keyWaitMs ?? 30_000)
 		while (Date.now() < until) {
 			await new Promise(r => setTimeout(r, 1000))
-			if (await sock.getAppStateSyncKey?.(id)) return
+			if (await hasKey(id)) return
 		}
 
 		throw new Error(

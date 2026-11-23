@@ -1,3 +1,7 @@
+# 1.5.3 (NYXCORE)
+
+- fix: chat tools (archive, pin, lock, clear...) wrongly said the app-state key was missing on sockets without `getAppStateSyncKey` (e.g. the nyxcoresocket package). The key is now read from the auth state, and the phone is asked through `relayMessage`.
+
 # 1.5.2 (NYXCORE)
 
 - feat: new event `app-state.mutation` ({ index, action, value, version }): every app-state change from the phone, raw. Lets you see exactly what WhatsApp sends for things like chat lock.
