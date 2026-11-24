@@ -44,7 +44,9 @@ const splitRow = (line: string): string[] => {
 const looksLikeRow = (line: string) => line.includes('|') && line.trim().length > 0
 
 export const parseMarkdownTables = (markdown: string, opts: MarkdownTableOptions = {}): MarkdownPart[] => {
-	const lines = String(markdown ?? '').replace(/\r\n?/g, '\n').split('\n')
+	const lines = String(markdown ?? '')
+		.replace(/\r\n?/g, '\n')
+		.split('\n')
 	const parts: MarkdownPart[] = []
 	let text: string[] = []
 	let first = true
@@ -72,9 +74,7 @@ export const parseMarkdownTables = (markdown: string, opts: MarkdownTableOptions
 			while (j < lines.length && looksLikeRow(lines[j]!) && !SEPARATOR.test(lines[j]!)) {
 				const cells = splitRow(lines[j]!)
 				if (cells.length !== header.length) {
-					throw new Error(
-						`Markdown table: row ${rows.length} has ${cells.length} columns, expected ${header.length}.`
-					)
+					throw new Error(`Markdown table: row ${rows.length} has ${cells.length} columns, expected ${header.length}.`)
 				}
 
 				rows.push({ items: cells, isHeading: false })
