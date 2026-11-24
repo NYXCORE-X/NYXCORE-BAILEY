@@ -1,3 +1,9 @@
+# 1.6.1 (NYXCORE)
+
+- fix: `markdownTable` now sends aligned monospace tables by default (works on every WhatsApp). The native rich table gave "your version of WhatsApp does not support it" on current WhatsApp, so it is now opt-in: `{ markdownTable, richTable: true }` (experimental).
+- feat: `renderTextTables(markdown, { title })`; `parseMarkdownTables` now also returns column alignment (`align`).
+- fix: article cards also send `mediaUrl` and `sourceType: 'URL'`.
+
 # 1.6.0 (NYXCORE)
 
 - feat: AI Markdown tables: `sock.sendMessage(jid, { markdownTable: md, tableTitle? })` turns Markdown pipe tables into WhatsApp's native rich table (text before / between / after the tables is kept; several tables; escaped pipes; every row must have the same number of columns).

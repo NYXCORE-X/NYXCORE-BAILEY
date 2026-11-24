@@ -39,6 +39,8 @@ export const makeCards = (sock: AnySock) => {
 						title: rest.title,
 						body: rest.body,
 						sourceUrl: url,
+						mediaUrl: url,
+						sourceType: 'URL',
 						thumbnailUrl: rest.thumbnailUrl,
 						thumbnail: rest.thumbnail,
 						mediaType: rest.mediaType ?? 1,

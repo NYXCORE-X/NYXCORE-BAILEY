@@ -1,5 +1,5 @@
 import { describe, expect, it } from '@jest/globals'
-import { markdownToAIRichResponse, parseMarkdownTables } from '../../Utils/markdown-table'
+import { markdownToAIRichResponse, parseMarkdownTables, renderTextTables } from '../../Utils/markdown-table'
 
 const md = `Current plans:
 
@@ -46,5 +46,15 @@ describe('markdown tables', () => {
 
 	it('throws when there is no table', () => {
 		expect(() => markdownToAIRichResponse('just text')).toThrow(/No Markdown table/)
+	})
+
+	it('renders aligned monospace tables with the text kept', () => {
+		const out = renderTextTables(md, { title: 'Plan comparison' })
+		expect(out).toContain('Current plans:')
+		expect(out).toContain('*Plan comparison*')
+		expect(out).toContain('```')
+		const rows = out.split('\n').filter(l => l.includes('│'))
+		expect(new Set(rows.map(r => [...r].length)).size).toBe(1) // every row has the same width
+		expect(out).toContain('Choose the plan that works for you.')
 	})
 })

@@ -272,7 +272,7 @@ export type AnyRegularMessageContent = (
 	  }
 	| { react: proto.Message.IReactionMessage }
 	| ({ stickerPack: StickerPackOptions } & Contextable)
-	| ({ markdownTable: string; tableTitle?: string } & Contextable)
+	| ({ markdownTable: string; tableTitle?: string; richTable?: boolean } & Contextable)
 	| {
 			buttonReply: ButtonReplyInfo
 			type: 'template' | 'plain'

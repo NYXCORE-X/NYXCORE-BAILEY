@@ -285,6 +285,7 @@ await sock.sendArticleCard(jid, {
 })
 ```
 
+- Tables are sent as aligned monospace tables by default, which every WhatsApp can show. The native WhatsApp rich table is experimental: add `richTable: true` (many WhatsApp versions answer with \"your version of WhatsApp does not support it\"). `renderTextTables(md, { title })` gives you the text version directly.
 - Tables: several tables per message, text around them is kept, a header row and data rows, escaped pipes (`\|`), and every row must have the same number of columns (otherwise it throws a clear error). Column alignment markers (`---:`) are accepted but WhatsApp's table has no alignment.
 - Lower level: `parseMarkdownTables(md, { title })` returns the text / table parts, `markdownToAIRichResponse(md, { title })` returns the rich response message.
 - Under the hood the table is a `richResponseMessage` wrapped as a bot-forwarded message. The article card is a text message with `contextInfo.externalAdReply`. WhatsApp decides the final look of both.

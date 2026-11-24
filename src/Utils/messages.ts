@@ -31,7 +31,7 @@ import { isJidGroup, isJidNewsletter, isJidStatusBroadcast, jidNormalizedUser } 
 import { sha256 } from './crypto'
 import { generateMessageIDV2, getKeyAuthor, unixTimestampSeconds } from './generics'
 import type { ILogger } from './logger'
-import { markdownToAIRichResponse } from './markdown-table'
+import { markdownToAIRichResponse, renderTextTables } from './markdown-table'
 import {
 	downloadContentFromMessage,
 	encryptedStream,
@@ -798,12 +798,20 @@ export const generateWAMessageContent = async (
 			options
 		)
 	} else if (hasNonNullishProperty(message, 'markdownTable')) {
-		// Markdown pipe tables -> WhatsApp's native rich table, wrapped as a bot-forwarded message
-		m.botForwardedMessage = {
-			message: {
-				richResponseMessage: markdownToAIRichResponse((message as any).markdownTable, {
-					title: (message as any).tableTitle
-				})
+		if ((message as any).richTable) {
+			// experimental: WhatsApp's native rich table (richResponseMessage in a bot-forwarded message).
+			// Many WhatsApp versions show "your version of WhatsApp does not support it" for this.
+			m.botForwardedMessage = {
+				message: {
+					richResponseMessage: markdownToAIRichResponse((message as any).markdownTable, {
+						title: (message as any).tableTitle
+					})
+				}
+			}
+		} else {
+			// default: aligned monospace tables, readable on every WhatsApp
+			m.extendedTextMessage = {
+				text: renderTextTables((message as any).markdownTable, { title: (message as any).tableTitle })
 			}
 		}
 	} else if (hasNonNullishProperty(message, 'sharePhoneNumber')) {
