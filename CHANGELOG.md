@@ -1,3 +1,8 @@
+# 1.6.2 (NYXCORE)
+
+- feat: cooler text tables: rounded box frame, upper-case header, dotted row dividers, 📊 title.
+- fix: `sendArticleCard` now sends a real link-preview card with your title, subtitle and image (the thumbnail is downloaded for you). The old external-ad card is still available with `style: 'ad'`.
+
 # 1.6.1 (NYXCORE)
 
 - fix: `markdownTable` now sends aligned monospace tables by default (works on every WhatsApp). The native rich table gave "your version of WhatsApp does not support it" on current WhatsApp, so it is now opt-in: `{ markdownTable, richTable: true }` (experimental).

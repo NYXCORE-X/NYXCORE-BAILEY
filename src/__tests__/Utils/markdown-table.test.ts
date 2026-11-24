@@ -51,9 +51,9 @@ describe('markdown tables', () => {
 	it('renders aligned monospace tables with the text kept', () => {
 		const out = renderTextTables(md, { title: 'Plan comparison' })
 		expect(out).toContain('Current plans:')
-		expect(out).toContain('*Plan comparison*')
+		expect(out).toContain('📊 *Plan comparison*')
 		expect(out).toContain('```')
-		const rows = out.split('\n').filter(l => l.includes('│'))
+		const rows = out.split('\n').filter(l => l.startsWith('│'))
 		expect(new Set(rows.map(r => [...r].length)).size).toBe(1) // every row has the same width
 		expect(out).toContain('Choose the plan that works for you.')
 	})

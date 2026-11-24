@@ -149,12 +149,20 @@ export const renderTextTables = (markdown: string, opts: MarkdownTableOptions = 
 		.map(p => {
 			if (p.type === 'text') return p.text
 			const widths = p.rows[0]!.items.map((_, c) => Math.max(...p.rows.map(r => [...(r.items[c] ?? '')].length)))
-			const line = (items: string[]) =>
-				items.map((cell, c) => pad(cell, widths[c]!, p.align[c] ?? 'left')).join('  │  ')
+			const row = (items: string[], bold = false) =>
+				'│ ' +
+				items.map((cell, c) => pad(bold ? cell.toUpperCase() : cell, widths[c]!, p.align[c] ?? 'left')).join(' │ ') +
+				' │'
+			const edge = (l: string, mid: string, r: string) => l + widths.map(w => '─'.repeat(w + 2)).join(mid) + r
 			const [head, ...body] = p.rows
-			const rule = widths.map(w => '─'.repeat(w)).join('──┼──')
-			const table = ['```', line(head!.items), rule, ...body.map(r => line(r.items)), '```'].join('\n')
-			return p.title ? `*${p.title}*\n${table}` : table
+			const lines = [edge('╭', '┬', '╮'), row(head!.items, true), edge('├', '┼', '┤')]
+			body.forEach((r, i) => {
+				lines.push(row(r.items))
+				if (i < body.length - 1) lines.push(edge('├', '┼', '┤').replace(/─/g, '╌'))
+			})
+			lines.push(edge('╰', '┴', '╯'))
+			const table = ['```', ...lines, '```'].join('\n')
+			return p.title ? `📊 *${p.title}*\n${table}` : table
 		})
 		.join('\n\n')
 }

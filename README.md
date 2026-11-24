@@ -279,9 +279,7 @@ await sock.sendArticleCard(jid, {
   body: 'WhatsApp Help Center',              // optional
   url: 'https://faq.whatsapp.com/123456',    // opened when the card is tapped
   thumbnailUrl: 'https://example.com/help.png',
-  mediaType: 1,                              // 1 image, 2 video
-  renderLargerThumbnail: true,
-  showAdAttribution: false,
+  // style: 'preview' (default, a link-preview card with your title/body/image) or 'ad' (external-ad style)
 })
 ```
 
