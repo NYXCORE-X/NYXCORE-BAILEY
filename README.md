@@ -23,7 +23,11 @@ It is not affiliated with or endorsed by WhatsApp. Use it responsibly: no spam, 
 | **Sending** | Group status, normal status, albums, sticker packs, events, queued / bulk sending with safe gaps. |
 | **Buttons** | Native-flow buttons get the routing node automatically, so they show up for **everyone**, not just you. |
 | **Bots & games** | `waitForMessage / Reply / Button / Reaction`, polls as quizzes, `animate`, `typewriter`, `countdown`. |
-| **Reliability** | App-state key check + repair, `deleteForMe`, `diagnose()`. |
+| **Reliability** | App-state key check + repair, `deleteForMe`, `diagnose()`, crash-safe auth state, one-file session backup. |
+| **Chat tools** | Archive, lock, clear, delete, pin, mute, mark read, disappearing messages, pin messages. Private chats and groups. |
+| **Presence** | `keepPresence`: stay always online or always offline. |
+| **HTML pages** | Send an HTML file with a recorded animated preview. |
+| **Debugging** | `app-state.mutation` event: see every raw app-state change from your phone. |
 | **Media** | Sticker maker with pack name/author, voice-note converter, view-once opener. |
 
 ## Install
@@ -139,6 +143,117 @@ Inputs can be a `Buffer`, a file path, or an `http(s)` URL.
 |---|---|---|
 | `secretStore` | memory only | `{ path?, max? }` persist message secrets |
 | `autoRepairAppStateKey` | `true` | check / request the app-state key after connecting |
+
+## Chat tools
+
+Archive, lock, clear, pin, mute and more, for private chats and groups. All of them are on the socket (`sock.archiveChat(...)`) and also in `makeNyxHelpers(sock)`.
+
+```js
+await sock.archiveChat(jid)            // and sock.unarchiveChat(jid)
+await sock.lockChat(jid)               // and sock.unlockChat(jid): moves it to / from "Locked chats"
+await sock.clearChat(jid)              // clear all messages
+await sock.deleteChat(jid)
+await sock.pinChat(jid)                // and sock.unpinChat(jid)
+await sock.muteChat(jid, 8 * 3600e3)   // ms, and sock.unmuteChat(jid)
+await sock.markChatRead(jid)           // and sock.markChatUnread(jid)
+
+// disappearing messages: 'off' | '24h' | '7d' | '90d' | seconds (private chats and groups)
+await sock.setDisappearing(jid, '7d')
+
+// pin a message inside a chat (seconds, default 7 days)
+await sock.pinMessage(jid, msg.key, 86400)
+await sock.unpinMessage(jid, msg.key)
+```
+
+- Archive, clear, delete and mark-read use "up to now" automatically. Pass the last message as a second argument if you want an exact range.
+- Archive, lock, clear, pin and mute are synced through WhatsApp's **app state** and need the app-state key. If it is missing, the tools ask your phone for it and wait up to 30 s (`makeChatTools(sock, { keyWaitMs })`) before failing with a clear message. This works on any socket, because the key is read from the auth state.
+- `chatModify({ lock: true | false }, jid)` is also supported. The lock format (`['lock', chatJid]`) was captured from a real phone with the `app-state.mutation` event below.
+- Chat lock, like the rest of these, only works on the Bailey socket (`@nyxcore/nyxcorebailey`). Other socket packages do not know the lock action.
+
+## Session safety
+
+```js
+const { useNyxAuthState, exportSessionBackup, importSessionBackup } = require('@nyxcore/nyxcorebailey')
+
+// drop-in for useMultiFileAuthState
+const { state, saveCreds } = await useNyxAuthState('./session', {
+  onRecover: info => console.log(info.action, info.file), // 'restored-from-backup' | 'quarantined'
+})
+
+// one-file backup (gzip, AES-256-GCM when a password is given)
+const backup = await exportSessionBackup('./session', 'my password')
+const files  = await importSessionBackup(backup, './session', 'my password') // returns how many files were written
+```
+
+- Writes are atomic, so a crash or restart in the middle of a write cannot leave a half-written file.
+- A damaged file is moved aside (`*.corrupt`) instead of lost, and `creds.json` is recovered from `creds.json.bak` automatically. This stops the "failed to decrypt / Bad MAC" storms that follow a bad shutdown.
+- If you clean old files out of your session folder, never delete `session-*`, `pre-key-*`, `sender-key-*` or `app-state-sync-key-*`. They are real encryption keys.
+
+## Presence
+
+```js
+const p = sock.keepPresence('online')   // always online
+p.set('offline')                        // switch to always offline
+p.stop()
+```
+
+Options: `{ intervalMs = 25000, settleMs = 1500 }`. In `offline` mode the status is applied again right after every incoming message, because WhatsApp turns you "online" when a message arrives.
+
+## HTML pages
+
+```js
+await sock.sendHtmlFile(jid, html, 'page.html', { caption, quoted })
+await sock.sendAnimatedPreview(jid, mp4, { caption, quoted })     // looping GIF-style video
+await sock.sendHtmlWithPreview(jid, html, mp4, { caption })
+const { previewed, reason } = await sock.sendHtmlPage(jid, html, { quality: 'high' }) // records a preview, falls back to the file only
+
+const ok  = await canRenderHtmlPreview()                // is a headless browser + ffmpeg available?
+const mp4 = await renderHtmlPreview(html, { quality: 'high', scale: 2, outputWidth: 720 })
+```
+
+- Recording uses the browser's screencast (a frame for every real change), 20 fps, phone-sized viewport (390x844), 720 px wide output. Options: `quality` (`'low' | 'medium' | 'high'`), `scale` (1 to 3), `outputWidth`.
+- Needs `playwright` or `puppeteer` and `ffmpeg` (all optional). 3D (WebGL) pages are recorded in software mode.
+- The recorded page cannot reach localhost or private network addresses.
+
+## Pairing, reconnecting, channels and status
+
+```js
+const { code, formatted } = await sock.safePairingCode('2348012345678', { retries: 3 })
+
+const { makeResilientSocket } = require('@nyxcore/nyxcorebailey')
+makeResilientSocket(config, { onSocket: s => { /* use s */ }, onGiveUp: () => {} }) // auto reconnect with backoff
+
+await sock.followChannel('https://whatsapp.com/channel/...')   // jid, link or invite code
+await sock.unfollowChannel(jid)
+await sock.reactToChannelPost(jid, serverId, '🔥')
+
+await sock.postTextStatus('Hello', [jid1, jid2])
+await sock.postMediaStatus({ image: buf, caption: 'Hi' }, [jid1])
+await sock.viewStatus(statusMsg.key)
+await sock.reactToStatus(statusMsg.key, '❤️')
+
+await sock.postGroupTextStatus(groupJid, 'Hi')
+await sock.postGroupMediaStatus(groupJid, { image: buf })
+await sock.sendStickerPack(jid, { name: 'Pack', publisher: 'Me', cover, stickers })
+```
+
+`safePairingCode` waits for the socket, retries, and returns the code both raw and formatted. `makeResilientSocket` reconnects at once on 515 and stops on 401 / 440 / 403. Helpers like `normalizePhone`, `formatPairingCode`, `parseChannelInvite` and `backoffDelay` are exported too.
+
+## Seeing what WhatsApp sends: `app-state.mutation`
+
+Every change your phone syncs to the bot (archive, pin, mute, lock, delete-for-me, contacts…) is also emitted raw, so you can see formats that are not documented:
+
+```js
+sock.ev.on('app-state.mutation', ({ index, action, value, version }) => {
+  console.log(action, index, version, value)
+})
+```
+
+- `index`: for example `['lock', '1203…@g.us']` or `['deleteMessageForMe', chatJid, messageId, '1', '0']`
+- `action`: the name of the real action field (for example `lockChatAction`, `deleteMessageForMeAction`, `muteAction`)
+- `value`: the action's content, `version`: the sync version
+
+This is how the chat-lock format was found: turn the event on, do the action on your phone, read the index and value. Your own changes made with `chatModify` appear here too.
 
 ## Credits
 
