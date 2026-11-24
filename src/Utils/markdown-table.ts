@@ -149,7 +149,8 @@ export const renderTextTables = (markdown: string, opts: MarkdownTableOptions = 
 		.map(p => {
 			if (p.type === 'text') return p.text
 			const widths = p.rows[0]!.items.map((_, c) => Math.max(...p.rows.map(r => [...(r.items[c] ?? '')].length)))
-			const line = (items: string[]) => items.map((cell, c) => pad(cell, widths[c]!, p.align[c] ?? 'left')).join('  │  ')
+			const line = (items: string[]) =>
+				items.map((cell, c) => pad(cell, widths[c]!, p.align[c] ?? 'left')).join('  │  ')
 			const [head, ...body] = p.rows
 			const rule = widths.map(w => '─'.repeat(w)).join('──┼──')
 			const table = ['```', line(head!.items), rule, ...body.map(r => line(r.items)), '```'].join('\n')
