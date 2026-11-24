@@ -15,6 +15,7 @@
  * cannot change the behaviour of the core protocol code.
  */
 import { canRenderHtmlPreview, renderHtmlPreview } from '../Utils/html-preview'
+import { makeCards } from './nyx/cards'
 import { makeChannels } from './nyx/channels'
 import { makeChatTools } from './nyx/chats'
 import { makeGroupStatus } from './nyx/groupStatus'
@@ -27,6 +28,7 @@ import { makeStickerPack } from './nyx/stickerPack'
 
 export { formatPairingCode, normalizePhone, parseChannelInvite }
 export type { SafePairingOptions } from './nyx/shared'
+export type { ArticleCardOptions } from './nyx/cards'
 export type { DisappearingDuration } from './nyx/chats'
 export { disappearingSeconds } from './nyx/chats'
 
@@ -36,6 +38,7 @@ export const makeNyxHelpers = (sock: AnySock) => ({
 	...makeStatus(sock),
 	...makeGroupStatus(sock),
 	...makeStickerPack(sock),
+	...makeCards(sock),
 	...makeChatTools(sock),
 	...makePresence(sock),
 	...makeHtml(sock),

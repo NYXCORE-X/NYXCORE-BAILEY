@@ -27,6 +27,7 @@ It is not affiliated with or endorsed by WhatsApp. Use it responsibly: no spam, 
 | **Chat tools** | Archive, lock, clear, delete, pin, mute, mark read, disappearing messages, pin messages. Private chats and groups. |
 | **Presence** | `keepPresence`: stay always online or always offline. |
 | **HTML pages** | Send an HTML file with a recorded animated preview. |
+| **Rich messages** | Markdown tables as native WhatsApp tables, tappable article cards. |
 | **Debugging** | `app-state.mutation` event: see every raw app-state change from your phone. |
 | **Media** | Sticker maker with pack name/author, voice-note converter, view-once opener. |
 
@@ -254,6 +255,39 @@ sock.ev.on('app-state.mutation', ({ index, action, value, version }) => {
 - `value`: the action's content, `version`: the sync version
 
 This is how the chat-lock format was found: turn the event on, do the action on your phone, read the index and value. Your own changes made with `chatModify` appear here too.
+
+## AI Markdown tables and article cards
+
+```js
+// Markdown pipe tables (what ChatGPT / Claude write) become a real WhatsApp table
+await sock.sendMessage(jid, {
+  markdownTable: `Current plans:
+
+| Plan | Storage | Price |
+| --- | ---: | ---: |
+| Basic | 10 GB | $5 |
+| Pro | 100 GB | $15 |
+
+Choose the plan that works for you.`,
+  tableTitle: 'Plan comparison', // optional, shown on the first table
+})
+
+// tappable link / help-center style card
+await sock.sendArticleCard(jid, {
+  text: 'Learn more in these articles:',     // optional, shown above the card
+  title: 'How to create and share a status',
+  body: 'WhatsApp Help Center',              // optional
+  url: 'https://faq.whatsapp.com/123456',    // opened when the card is tapped
+  thumbnailUrl: 'https://example.com/help.png',
+  mediaType: 1,                              // 1 image, 2 video
+  renderLargerThumbnail: true,
+  showAdAttribution: false,
+})
+```
+
+- Tables: several tables per message, text around them is kept, a header row and data rows, escaped pipes (`\|`), and every row must have the same number of columns (otherwise it throws a clear error). Column alignment markers (`---:`) are accepted but WhatsApp's table has no alignment.
+- Lower level: `parseMarkdownTables(md, { title })` returns the text / table parts, `markdownToAIRichResponse(md, { title })` returns the rich response message.
+- Under the hood the table is a `richResponseMessage` wrapped as a bot-forwarded message. The article card is a text message with `contextInfo.externalAdReply`. WhatsApp decides the final look of both.
 
 ## Credits
 

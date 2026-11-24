@@ -31,6 +31,7 @@ import { isJidGroup, isJidNewsletter, isJidStatusBroadcast, jidNormalizedUser } 
 import { sha256 } from './crypto'
 import { generateMessageIDV2, getKeyAuthor, unixTimestampSeconds } from './generics'
 import type { ILogger } from './logger'
+import { markdownToAIRichResponse } from './markdown-table'
 import {
 	downloadContentFromMessage,
 	encryptedStream,
@@ -796,6 +797,15 @@ export const generateWAMessageContent = async (
 			((message as any).stickerPack ?? message) as StickerPackInput,
 			options
 		)
+	} else if (hasNonNullishProperty(message, 'markdownTable')) {
+		// Markdown pipe tables -> WhatsApp's native rich table, wrapped as a bot-forwarded message
+		m.botForwardedMessage = {
+			message: {
+				richResponseMessage: markdownToAIRichResponse((message as any).markdownTable, {
+					title: (message as any).tableTitle
+				})
+			}
+		}
 	} else if (hasNonNullishProperty(message, 'sharePhoneNumber')) {
 		m.protocolMessage = {
 			type: proto.Message.ProtocolMessage.Type.SHARE_PHONE_NUMBER

@@ -1,3 +1,10 @@
+# 1.6.0 (NYXCORE)
+
+- feat: AI Markdown tables: `sock.sendMessage(jid, { markdownTable: md, tableTitle? })` turns Markdown pipe tables into WhatsApp's native rich table (text before / between / after the tables is kept; several tables; escaped pipes; every row must have the same number of columns).
+- feat: `parseMarkdownTables(md, { title })` and `markdownToAIRichResponse(md, { title })` for lower-level control.
+- feat: `sock.sendArticleCard(jid, { text?, title, body?, url?, thumbnailUrl?, mediaType?, renderLargerThumbnail?, showAdAttribution? })`: a tappable link / help-center style card (text message + contextInfo.externalAdReply).
+- note: both are WhatsApp-only features, and WhatsApp decides the final look of the card / table.
+
 # 1.5.4 (NYXCORE)
 
 - fix: chat lock now uses the index WhatsApp really sends (`['lock', chatJid]`, captured from a real phone), instead of the guessed `lockChat`.
