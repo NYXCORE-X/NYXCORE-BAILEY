@@ -1,16 +1,20 @@
 {
   "name": "@nyxcore/nyxcorebailey",
   "type": "module",
-  "version": "1.6.2",
+  "version": "1.6.3",
   "description": "NYXCORE Baileys: a WhatsApp Web library for bots, with built-in edit/poll-vote decryption, games helpers, group status, albums, sticker packs, events and diagnostics",
   "keywords": [
     "whatsapp",
     "automation"
   ],
-  "homepage": "https://github.com/NYXCORE-X/NYXCORE-BAILEYS",
-"repository": {
-  "url": "https://github.com/NYXCORE-X/NYXCORE-BAILEYS.git"
-},
+  "homepage": "https://github.com/NYXCORE-X/NYXCORE-BAILEY#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/NYXCORE-X/NYXCORE-BAILEY.git"
+  },
+  "bugs": {
+    "url": "https://github.com/NYXCORE-X/NYXCORE-BAILEY/issues"
+  },
   "license": "MIT",
   "author": "NYXCORE",
   "publishConfig": {

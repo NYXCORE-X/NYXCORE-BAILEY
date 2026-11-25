@@ -1,3 +1,9 @@
+# 1.6.3 (NYXCORE)
+
+- fix: the npm / GitHub links now point to the real repository (NYXCORE-X/NYXCORE-BAILEY). `homepage`, `repository` (with type) and `bugs` were wrong, which also breaks npm provenance.
+- feat: `sendArticleCard(..., { frame: true })` adds a framed header (title, subtitle, "Tap the card to read") above the link-preview card.
+- chore: GitHub releases now get their title and notes from this file automatically.
+
 # 1.6.2 (NYXCORE)
 
 - feat: cooler text tables: rounded box frame, upper-case header, dotted row dividers, 📊 title.

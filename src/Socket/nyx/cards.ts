@@ -20,6 +20,8 @@ export interface ArticleCardOptions {
 	thumbnailUrl?: string
 	/** preview image as bytes (alternative to thumbnailUrl) */
 	thumbnail?: Buffer
+	/** put a framed header (title, subtitle, "tap the card") above the card */
+	frame?: boolean
 	/**
 	 * 'preview' (default): a normal WhatsApp link-preview card with YOUR title, subtitle and image.
 	 * 'ad': the external-ad style card (contextInfo.externalAdReply). WhatsApp often shows it differently or hides it.
@@ -31,6 +33,17 @@ export interface ArticleCardOptions {
 	showAdAttribution?: boolean
 	quoted?: any
 }
+
+const frameText = (card: ArticleCardOptions) =>
+	[
+		'╭━━━〔 📰 *ARTICLE* 〕━━━╮',
+		`┃ 📌 *${card.title}*`,
+		card.body ? `┃ 💬 _${card.body}_` : '',
+		'┃ 👇 Tap the card to read',
+		'╰━━━━━━━━━━━━━━━━╯'
+	]
+		.filter(Boolean)
+		.join('\n')
 
 const isJpeg = (b: Buffer) => b.length > 3 && b[0] === 0xff && b[1] === 0xd8
 
@@ -68,7 +81,7 @@ export const makeCards = (sock: AnySock) => {
 			return sock.sendMessage(
 				jid,
 				{
-					text: text ? `${text}\n${url}` : url,
+					text: [card.frame ? frameText(card) : '', text || '', url].filter(Boolean).join('\n'),
 					linkPreview: {
 						'canonical-url': url,
 						'matched-text': url,
