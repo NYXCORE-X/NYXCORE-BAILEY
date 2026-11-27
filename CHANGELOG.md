@@ -1,3 +1,7 @@
+# 1.6.4 (NYXCORE)
+
+- docs: short, readable npm README (install, quick start, examples, a copy-paste cheat sheet). The full README and API reference moved to docs/FULL.md.
+
 # 1.6.3 (NYXCORE)
 
 - fix: the npm / GitHub links now point to the real repository (NYXCORE-X/NYXCORE-BAILEY). `homepage`, `repository` (with type) and `bugs` were wrong, which also breaks npm provenance.
